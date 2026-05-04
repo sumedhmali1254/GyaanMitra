@@ -1,0 +1,20 @@
+# Study Planner ML Module - Python Dependencies
+# This file contains all required packages for the Study Planner AI module
+# Install with: pip install -r requirements.txt
+
+# Core Data Science & ML Libraries
+pandas>=1.5.0
+numpy>=1.24.0
+scikit-learn>=1.2.0
+
+# Model Persistence
+joblib>=1.2.0
+
+# FastAPI & Web Server
+fastapi>=0.95.0
+uvicorn>=0.21.0
+pydantic>=2.0.0
+
+# Optional but recommended
+# python-dotenv>=1.0.0  # For environment variable management
+# pytest>=7.0.0         # For unit testing

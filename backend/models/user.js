@@ -1,0 +1,98 @@
+const { DataTypes } = require("sequelize");
+const bcrypt = require("bcryptjs");
+const sequelize = require("../config/database");
+
+const User = sequelize.define(
+  "User",
+  {
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true,
+    },
+    firstName: {
+      type: DataTypes.STRING(50),
+      allowNull: false,
+      field: "first_name",
+    },
+    lastName: {
+      type: DataTypes.STRING(50),
+      allowNull: false,
+      field: "last_name",
+    },
+    email: {
+      type: DataTypes.STRING(255),
+      allowNull: false,
+      unique: 'idx_user_email',
+      validate: {
+        isEmail: true,
+      },
+    },
+    password: {
+      type: DataTypes.STRING(255),
+      allowNull: false,
+    },
+    phone: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+      defaultValue: null,
+    },
+    location: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+      defaultValue: null,
+    },
+    bio: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      defaultValue: null,
+    },
+    avatar: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      defaultValue: null,
+    },
+    settings: {
+      type: DataTypes.JSON,
+      defaultValue: {
+        syllabusData: [],
+        preferredFlashcardSource: "pdf",
+        theme: "light",
+        timer: {
+          focusDuration: 25,
+          breakDuration: 5,
+          autoStart: false
+        },
+        music: {
+          lastVibe: "lofi",
+          volume: 50
+        }
+      },
+    },
+  },
+  {
+    tableName: "users",
+    underscored: true,
+    timestamps: true,
+    hooks: {
+      beforeCreate: async (user) => {
+        if (user.password) {
+          const salt = await bcrypt.genSalt(10);
+          user.password = await bcrypt.hash(user.password, salt);
+        }
+      },
+      beforeUpdate: async (user) => {
+        if (user.changed("password")) {
+          const salt = await bcrypt.genSalt(10);
+          user.password = await bcrypt.hash(user.password, salt);
+        }
+      },
+    },
+  },
+);
+
+User.prototype.matchPassword = async function (enteredPassword) {
+  return await bcrypt.compare(enteredPassword, this.password);
+};
+
+module.exports = User;

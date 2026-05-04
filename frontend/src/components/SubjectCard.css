@@ -1,0 +1,226 @@
+/* Subject Card Styles */
+.subject-card {
+  background: linear-gradient(135deg, #ffffff 0%, #fafafa 100%);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 1rem;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  transition: all var(--transition-fast, 150ms ease);
+  position: relative;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+.subject-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(121, 85, 72, 0.12);
+  border-color: var(--primary, #795548);
+}
+
+.subject-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px dashed var(--border-color, #e2e8f0);
+}
+
+.subject-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary, #1e293b);
+  margin: 0;
+  letter-spacing: -0.3px;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subject-header .btn-close {
+  background: none;
+  border: none;
+  padding: 0.25rem;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--text-secondary, #64748b);
+  cursor: pointer;
+  transition: all var(--transition-fast, 150ms ease);
+}
+
+.subject-header .btn-close:hover {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  transform: rotate(90deg);
+}
+
+.subject-header .btn-close i {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.subject-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.detail-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary, #475569);
+}
+
+.detail-row i {
+  font-size: 0.9rem;
+  width: 16px;
+  color: var(--primary, #795548);
+}
+
+.icon-primary {
+  color: var(--primary, #795548);
+}
+
+.meta-text {
+  color: var(--text-secondary, #64748b);
+  font-size: 0.8rem;
+}
+
+/* Priority Badge */
+.subject-priority-wrapper {
+  margin: 0.25rem 0;
+}
+
+.priority-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 2rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.priority-badge.priority-low {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.priority-badge.priority-medium {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.priority-badge.priority-high {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+/* Subject Meta Info */
+.subject-meta {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color, #e2e8f0);
+  font-size: 0.8rem;
+}
+
+.meta-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.25rem;
+  color: var(--text-secondary, #475569);
+}
+
+.meta-row strong {
+  color: var(--text-primary, #1e293b);
+  font-weight: 600;
+}
+
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+}
+
+.meta-grid div {
+  color: var(--text-secondary, #475569);
+}
+
+.meta-grid strong {
+  color: var(--text-primary, #1e293b);
+  font-weight: 600;
+  margin-right: 0.25rem;
+}
+
+/* Subjects Section in SubSidebar */
+.sub-sidebar-subjects {
+  padding: 0 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.subjects-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+  padding: 0 0.25rem;
+}
+
+.subjects-header h4 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary, #1e293b);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.subjects-count {
+  background: linear-gradient(135deg, #795548 0%, #7c3aed 100%);
+  color: white;
+  padding: 0.15rem 0.5rem;
+  border-radius: 1rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.subjects-list {
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+/* Custom Scrollbar for Subjects List */
+.subjects-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.subjects-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.subjects-list::-webkit-scrollbar-thumb {
+  background: rgba(121, 85, 72, 0.2);
+  border-radius: 2px;
+}
+
+.subjects-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(121, 85, 72, 0.4);
+}
+
+/* Empty State */
+.subjects-empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--text-secondary, #64748b);
+  font-size: 0.9rem;
+  background: rgba(121, 85, 72, 0.02);
+  border-radius: 1rem;
+  border: 1px dashed var(--border-color, #e2e8f0);
+}
