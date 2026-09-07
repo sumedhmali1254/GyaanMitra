@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+.npm
+frontend/node_modules/
+backend/node_modules/
+
+# Environment
+.env
+.env.local
+.env.development.local
+.npmrc
+
+# Build Outputs
+dist/
+build/
+*.pyc
+__pycache__/
+frontend/dist/
+
+# OS/IDE
+.DS_Store
+.vscode/
+.idea/
+*.log
+
+# Project Specific
+uploads/
+!backend/uploads/
