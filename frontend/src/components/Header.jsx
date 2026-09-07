@@ -6,6 +6,7 @@ import { useTimer } from "../context/TimerContext";
 import { AuthContext } from "../context/AuthContext";
 import { useSettings } from "../context/SettingsContext";
 import "./Header.css";
+import { API_ORIGIN } from "../services/api";
 
 const Header = ({ sidebarOpen, toggleSidebar, getPageTitle }) => {
   const [showNotifications, setShowNotifications] = useState(false);
@@ -498,7 +499,8 @@ const Header = ({ sidebarOpen, toggleSidebar, getPageTitle }) => {
                   width: "32px",
                   height: "32px",
                   borderRadius: "50%",
-                  backgroundImage: `url(http://localhost:5000${user.avatar})`,
+                  // [DEPLOYMENT UPDATE]: Resolve uploaded avatars from the configured backend.
+                  backgroundImage: `url(${API_ORIGIN}${user.avatar})`,
                   backgroundSize: "cover",
                   backgroundPosition: "center",
                   border: "2px solid rgba(121, 85, 72, 0.2)",

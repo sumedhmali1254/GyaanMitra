@@ -13,18 +13,26 @@ const { errorHandler } = require("./middleware/errorMiddleware");
 
 const app = express();
 
+// app.use(
+//   cors({
+//     origin: (origin, callback) => {
+//       const allowedOrigins = process.env.FRONTEND_URL
+//         ? process.env.FRONTEND_URL.split(",").map((o) => o.trim())
+//         : ["http://localhost:5173", "http://localhost:5174"];
+//       if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+//         callback(null, true);
+//       } else {
+//         callback(new Error("Not allowed by CORS"));
+//       }
+//     },
+//     credentials: true,
+//   }),
+// );
+
+// [DEPLOYMENT UPDATE]: Read the deployed Vercel origin from FRONTEND_URL.
 app.use(
   cors({
-    origin: (origin, callback) => {
-      const allowedOrigins = process.env.FRONTEND_URL
-        ? process.env.FRONTEND_URL.split(",").map((o) => o.trim())
-        : ["http://localhost:5173", "http://localhost:5174"];
-      if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
+    origin: process.env.FRONTEND_URL || "*",
     credentials: true,
   }),
 );

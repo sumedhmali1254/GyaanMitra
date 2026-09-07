@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import { AuthContext } from "../context/AuthContext";
 import { useSettings } from "../context/SettingsContext";
-import api from "../services/api";
+import api, { API_ORIGIN } from "../services/api";
 
 const ProfilePage = ({ isEmbedded = false }) => {
   const { user, token, fetchMe, logout } = useContext(AuthContext);
@@ -53,27 +53,31 @@ const ProfilePage = ({ isEmbedded = false }) => {
   // Aggregate Stats
   const stats = useMemo(() => {
     const totalMinutes = sessions.reduce((sum, s) => sum + s.duration, 0);
-    const totalValue = totalMinutes < 60 ? `${totalMinutes} min` : `${(totalMinutes / 60).toFixed(1)} hrs`;
-    
+    const totalValue =
+      totalMinutes < 60
+        ? `${totalMinutes} min`
+        : `${(totalMinutes / 60).toFixed(1)} hrs`;
+
     // Dynamic Streak Calculation
     const activeDates = new Set();
-    sessions.forEach(s => {
-      if (s.duration >= 5) activeDates.add(new Date(s.startTime).toDateString());
+    sessions.forEach((s) => {
+      if (s.duration >= 5)
+        activeDates.add(new Date(s.startTime).toDateString());
     });
-    
+
     let streakCount = 0;
     if (activeDates.size > 0) {
       const checkDate = new Date();
-      checkDate.setHours(0,0,0,0);
-      
+      checkDate.setHours(0, 0, 0, 0);
+
       const todayStr = checkDate.toDateString();
       const yesterday = new Date(checkDate);
       yesterday.setDate(yesterday.getDate() - 1);
       const yesterdayStr = yesterday.toDateString();
-      
+
       const hasToday = activeDates.has(todayStr);
       const hasYesterday = activeDates.has(yesterdayStr);
-      
+
       if (hasToday || hasYesterday) {
         let currentIter = hasToday ? checkDate : yesterday;
         while (activeDates.has(currentIter.toDateString())) {
@@ -104,7 +108,12 @@ const ProfilePage = ({ isEmbedded = false }) => {
       },
       {
         label: "Learning Rank",
-        value: sessions.length > 20 ? "Elite Pro" : sessions.length > 5 ? "Scholar" : "Novice",
+        value:
+          sessions.length > 20
+            ? "Elite Pro"
+            : sessions.length > 5
+              ? "Scholar"
+              : "Novice",
         icon: "bi-graph-up",
         color: "warning",
       },
@@ -114,7 +123,7 @@ const ProfilePage = ({ isEmbedded = false }) => {
   const memberSince = useMemo(() => {
     if (!user?.createdAt) return "Member since Jan 2024";
     const d = new Date(user.createdAt);
-    const month = d.toLocaleString('default', { month: 'short' });
+    const month = d.toLocaleString("default", { month: "short" });
     const year = d.getFullYear();
     return `Member since ${month} ${year}`;
   }, [user]);
@@ -147,7 +156,7 @@ const ProfilePage = ({ isEmbedded = false }) => {
 
       toast.success("Profile updated successfully!");
       setIsEditing(false);
-      
+
       // Refresh global state
       if (fetchMe) fetchMe();
     } catch (error) {
@@ -157,7 +166,8 @@ const ProfilePage = ({ isEmbedded = false }) => {
     }
   };
 
-  const fullName = `${profile.firstName} ${profile.lastName}`.trim() || "Learner";
+  const fullName =
+    `${profile.firstName} ${profile.lastName}`.trim() || "Learner";
 
   const content = (
     <>
@@ -176,14 +186,15 @@ const ProfilePage = ({ isEmbedded = false }) => {
                 fontWeight: "bold",
                 boxShadow: "0 8px 16px rgba(121, 85, 72, 0.3)",
                 backgroundImage: profile.avatar
-                  ? `url(${profile.avatar.startsWith('http') ? profile.avatar : `http://localhost:5000${profile.avatar}`})`
+                  ? // [DEPLOYMENT UPDATE]: Resolve uploaded avatars from the configured backend.
+                    `url(${profile.avatar.startsWith("http") ? profile.avatar : `${API_ORIGIN}${profile.avatar}`})`
                   : "linear-gradient(135deg, #795548 0%, #5d4037 100%)",
                 backgroundSize: "cover",
                 backgroundPosition: "center",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                overflow: "hidden"
+                overflow: "hidden",
               }}
             >
               {!profile.avatar && (
@@ -204,10 +215,13 @@ const ProfilePage = ({ isEmbedded = false }) => {
                   fontSize: "0.85rem",
                   fontWeight: "600",
                   whiteSpace: "nowrap",
-                  border: "1px solid #d7ccc8"
+                  border: "1px solid #d7ccc8",
                 }}
               >
-                <i className="bi bi-star-fill me-2" style={{color: "#8d6e63"}}></i>
+                <i
+                  className="bi bi-star-fill me-2"
+                  style={{ color: "#8d6e63" }}
+                ></i>
                 Premium Tier
               </span>
               <span
@@ -219,10 +233,13 @@ const ProfilePage = ({ isEmbedded = false }) => {
                   fontSize: "0.85rem",
                   fontWeight: "600",
                   whiteSpace: "nowrap",
-                  border: "1px solid #d1fae5"
+                  border: "1px solid #d1fae5",
                 }}
               >
-                <i className="bi bi-calendar-check me-2" style={{color: "#34d399"}}></i>
+                <i
+                  className="bi bi-calendar-check me-2"
+                  style={{ color: "#34d399" }}
+                ></i>
                 {memberSince}
               </span>
             </div>
@@ -287,7 +304,9 @@ const ProfilePage = ({ isEmbedded = false }) => {
               </div>
               <div className="row mb-3">
                 <div className="col-md-6">
-                  <label className="form-label fw-bold small text-muted">Email</label>
+                  <label className="form-label fw-bold small text-muted">
+                    Email
+                  </label>
                   <input
                     type="email"
                     className="form-control"
@@ -295,11 +314,13 @@ const ProfilePage = ({ isEmbedded = false }) => {
                     value={profile.email}
                     onChange={handleInputChange}
                     disabled
-                    style={{ background: '#f8fafc' }}
+                    style={{ background: "#f8fafc" }}
                   />
                 </div>
                 <div className="col-md-6">
-                  <label className="form-label fw-bold small text-muted">Avatar Image</label>
+                  <label className="form-label fw-bold small text-muted">
+                    Avatar Image
+                  </label>
                   <input
                     type="file"
                     className="form-control"
@@ -310,7 +331,9 @@ const ProfilePage = ({ isEmbedded = false }) => {
               </div>
               <div className="row mb-3">
                 <div className="col-md-6">
-                  <label className="form-label fw-bold small text-muted">Phone Number</label>
+                  <label className="form-label fw-bold small text-muted">
+                    Phone Number
+                  </label>
                   <input
                     type="text"
                     className="form-control"
@@ -321,7 +344,9 @@ const ProfilePage = ({ isEmbedded = false }) => {
                   />
                 </div>
                 <div className="col-md-6">
-                  <label className="form-label fw-bold small text-muted">Location</label>
+                  <label className="form-label fw-bold small text-muted">
+                    Location
+                  </label>
                   <input
                     type="text"
                     className="form-control"
@@ -334,7 +359,9 @@ const ProfilePage = ({ isEmbedded = false }) => {
               </div>
               <div className="row mb-4">
                 <div className="col-md-12">
-                  <label className="form-label fw-bold small text-muted">Short Bio</label>
+                  <label className="form-label fw-bold small text-muted">
+                    Short Bio
+                  </label>
                   <textarea
                     className="form-control"
                     name="bio"
@@ -446,47 +473,90 @@ const ProfilePage = ({ isEmbedded = false }) => {
               </div>
 
               {/* Info */}
-              <div className="card border-0 shadow-sm p-4 mb-4" style={{ borderRadius: "1rem" }}>
-                <h5 className="fw-bold mb-4 text-dark-emphasis border-bottom pb-3">Personal Information</h5>
+              <div
+                className="card border-0 shadow-sm p-4 mb-4"
+                style={{ borderRadius: "1rem" }}
+              >
+                <h5 className="fw-bold mb-4 text-dark-emphasis border-bottom pb-3">
+                  Personal Information
+                </h5>
                 <div className="row g-4">
                   <div className="col-md-6 border-end-md">
                     <div className="d-flex align-items-center mb-2 text-muted">
-                       <i className="bi bi-envelope me-2"></i>
-                       <span style={{ fontSize: "0.875rem", fontWeight: "600" }}>Email Address</span>
+                      <i className="bi bi-envelope me-2"></i>
+                      <span style={{ fontSize: "0.875rem", fontWeight: "600" }}>
+                        Email Address
+                      </span>
                     </div>
-                    <p style={{ fontWeight: "500", color: "var(--text-primary)", margin: 0 }}>{profile.email}</p>
+                    <p
+                      style={{
+                        fontWeight: "500",
+                        color: "var(--text-primary)",
+                        margin: 0,
+                      }}
+                    >
+                      {profile.email}
+                    </p>
                   </div>
                   <div className="col-md-6">
                     <div className="d-flex align-items-center mb-2 text-muted">
-                       <i className="bi bi-telephone ms-md-2 me-2"></i>
-                       <span style={{ fontSize: "0.875rem", fontWeight: "600" }}>Phone Number</span>
+                      <i className="bi bi-telephone ms-md-2 me-2"></i>
+                      <span style={{ fontSize: "0.875rem", fontWeight: "600" }}>
+                        Phone Number
+                      </span>
                     </div>
-                    <p className="ms-md-4" style={{ fontWeight: "500", color: profile.phone ? "var(--text-primary)" : "#94a3b8", margin: 0 }}>
+                    <p
+                      className="ms-md-4"
+                      style={{
+                        fontWeight: "500",
+                        color: profile.phone
+                          ? "var(--text-primary)"
+                          : "#94a3b8",
+                        margin: 0,
+                      }}
+                    >
                       {profile.phone || "Not set"}
                     </p>
                   </div>
                   <div className="col-md-6 border-end-md pt-md-3">
                     <div className="d-flex align-items-center mb-2 text-muted">
-                       <i className="bi bi-geo-alt me-2"></i>
-                       <span style={{ fontSize: "0.875rem", fontWeight: "600" }}>Location</span>
+                      <i className="bi bi-geo-alt me-2"></i>
+                      <span style={{ fontSize: "0.875rem", fontWeight: "600" }}>
+                        Location
+                      </span>
                     </div>
-                    <p style={{ fontWeight: "500", color: profile.location ? "var(--text-primary)" : "#94a3b8", margin: 0 }}>
+                    <p
+                      style={{
+                        fontWeight: "500",
+                        color: profile.location
+                          ? "var(--text-primary)"
+                          : "#94a3b8",
+                        margin: 0,
+                      }}
+                    >
                       {profile.location || "Not set"}
                     </p>
                   </div>
                   <div className="col-md-6 pt-md-3">
                     <div className="d-flex align-items-center mb-2 text-muted">
-                       <i className="bi bi-person-lines-fill ms-md-2 me-2"></i>
-                       <span style={{ fontSize: "0.875rem", fontWeight: "600" }}>Bio</span>
+                      <i className="bi bi-person-lines-fill ms-md-2 me-2"></i>
+                      <span style={{ fontSize: "0.875rem", fontWeight: "600" }}>
+                        Bio
+                      </span>
                     </div>
-                    <p className="ms-md-4" style={{ fontWeight: "500", color: profile.bio ? "var(--text-primary)" : "#94a3b8", margin: 0 }}>
+                    <p
+                      className="ms-md-4"
+                      style={{
+                        fontWeight: "500",
+                        color: profile.bio ? "var(--text-primary)" : "#94a3b8",
+                        margin: 0,
+                      }}
+                    >
                       {profile.bio || "No bio set yet."}
                     </p>
                   </div>
                 </div>
               </div>
-
-
             </>
           )}
         </div>

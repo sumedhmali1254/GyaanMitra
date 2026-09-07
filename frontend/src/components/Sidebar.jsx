@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 import { AuthContext } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { useSettings } from "../context/SettingsContext";
+import { API_ORIGIN } from "../services/api";
 
 const Sidebar = ({ isOpen, isExpanded, onClose, onToggle }) => {
   const [isHovered, setIsHovered] = useState(false);
@@ -55,11 +56,31 @@ const Sidebar = ({ isOpen, isExpanded, onClose, onToggle }) => {
         onMouseLeave={() => setIsHovered(false)}
       >
         <div className="sidebar-header">
-          <div className="sidebar-brand" style={{ display: 'flex', alignItems: 'center', justifyContent: isDesktopExpanded ? 'flex-start' : 'center', padding: isDesktopExpanded ? '0' : '0' }}>
+          <div
+            className="sidebar-brand"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: isDesktopExpanded ? "flex-start" : "center",
+              padding: isDesktopExpanded ? "0" : "0",
+            }}
+          >
             {isDesktopExpanded ? (
-              <img src="/gyaanmitra_mainlogo.png" alt="GyaanMitra" style={{ height: '32px', maxWidth: '100%', objectFit: 'contain' }} />
+              <img
+                src="/gyaanmitra_mainlogo.png"
+                alt="GyaanMitra"
+                style={{
+                  height: "32px",
+                  maxWidth: "100%",
+                  objectFit: "contain",
+                }}
+              />
             ) : (
-              <img src="/gyaanmitra_logo2.png" alt="GM" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
+              <img
+                src="/gyaanmitra_logo2.png"
+                alt="GM"
+                style={{ width: "40px", height: "40px", objectFit: "contain" }}
+              />
             )}
           </div>
           {isDesktopExpanded && (
@@ -72,7 +93,9 @@ const Sidebar = ({ isOpen, isExpanded, onClose, onToggle }) => {
               title={isExpanded ? "Collapse sidebar" : "Expand sidebar"}
               aria-label="Toggle sidebar"
             >
-              <i className={`bi ${isExpanded ? "bi-chevron-left" : "bi-chevron-right"}`}></i>
+              <i
+                className={`bi ${isExpanded ? "bi-chevron-left" : "bi-chevron-right"}`}
+              ></i>
             </button>
           )}
         </div>
@@ -86,8 +109,9 @@ const Sidebar = ({ isOpen, isExpanded, onClose, onToggle }) => {
               className={({ isActive }) => {
                 const isSettings = link.label === "Settings";
                 const isProfileActive = activeTab === "profile";
-                const shouldBeActive = isActive && (!isSettings || !isProfileActive);
-                
+                const shouldBeActive =
+                  isActive && (!isSettings || !isProfileActive);
+
                 return `sidebar-link animate-slide-in stagger-${index + 1}${shouldBeActive ? " active" : ""}`;
               }}
               style={{ opacity: 0 }}
@@ -107,7 +131,7 @@ const Sidebar = ({ isOpen, isExpanded, onClose, onToggle }) => {
               onClose();
             }}
             className={({ isActive }) =>
-              `sidebar-user-link ${isActive && activeTab === 'profile' ? "active" : ""}`
+              `sidebar-user-link ${isActive && activeTab === "profile" ? "active" : ""}`
             }
             title="View Profile"
           >
@@ -115,7 +139,12 @@ const Sidebar = ({ isOpen, isExpanded, onClose, onToggle }) => {
               <div className="sidebar-user-avatar">
                 {user?.avatar ? (
                   <img
-                    src={user.avatar.startsWith('http') ? user.avatar : `http://localhost:5000${user.avatar}`}
+                    // [DEPLOYMENT UPDATE]: Resolve uploaded avatars from the configured backend.
+                    src={
+                      user.avatar.startsWith("http")
+                        ? user.avatar
+                        : `${API_ORIGIN}${user.avatar}`
+                    }
                     alt={user?.firstName || "User"}
                     onError={(e) => {
                       e.target.style.display = "none";

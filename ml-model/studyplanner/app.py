@@ -17,6 +17,7 @@ import logging
 import traceback
 import math
 import sys
+import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -893,18 +894,22 @@ async def generate_study_plan(request: GeneratePlanRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    print("\n" + "="*50)
-    print(" Starting Study Planner API Server v4.0")
-    print("="*50)
-    print(" Server: http://127.0.0.1:8000")
-    print(" Docs: http://127.0.0.1:8000/docs")
-    print(" Features: Slot-Based Engine + AI Advisor")
-    print("="*50 + "\n")
-    
+
+    # print("\n" + "="*50)
+    # print(" Starting Study Planner API Server v4.0")
+    # print("="*50)
+    # print(" Server: http://127.0.0.1:8000")
+    # print(" Docs: http://127.0.0.1:8000/docs")
+    # print(" Features: Slot-Based Engine + AI Advisor")
+    # print("="*50 + "\n")
+
+    # [DEPLOYMENT UPDATE]: Render requires 0.0.0.0 and its injected PORT.
+    port = int(os.environ.get("PORT", 10000))
+    print(f"Starting Study Planner API Server on 0.0.0.0:{port}")
     uvicorn.run(
         "app:app",
-        host="127.0.0.1",
-        port=8000,
+        host="0.0.0.0",
+        port=port,
         log_level="info",
-        reload=True
+        reload=False,
     )

@@ -5,7 +5,11 @@
  * for making priority predictions and getting study recommendations.
  */
 
-const ML_API_BASE_URL = "http://127.0.0.1:8000";
+// const ML_API_BASE_URL = "http://127.0.0.1:8000";
+
+// [DEPLOYMENT UPDATE]: Use the deployed Render ML service in production.
+const ML_API_BASE_URL =
+  import.meta.env.VITE_ML_API_BASE_URL || "http://127.0.0.1:8000";
 
 /**
  * Check if the ML API is healthy and accessible
@@ -118,7 +122,9 @@ export const predictStudyPriority = async (studyData) => {
     return prediction;
   } catch (error) {
     if (error.name === "AbortError") {
-      throw new Error("ML API server not responding (timeout). Make sure it is running.");
+      throw new Error(
+        "ML API server not responding (timeout). Make sure it is running.",
+      );
     }
     console.error("Error predicting study priority:", error);
     throw error;
@@ -326,7 +332,9 @@ export const generateStudyPlan = async (planData) => {
         subject: s.subject,
         examDate: s.examDate,
         chapters: parseInt(s.chapters),
-        avg_chapter_time: s.avg_chapter_time ? parseFloat(s.avg_chapter_time) : null,
+        avg_chapter_time: s.avg_chapter_time
+          ? parseFloat(s.avg_chapter_time)
+          : null,
         startTime: s.startTime || "06:00 AM",
         endTime: s.endTime || "10:00 PM",
         beginnerMode: Boolean(s.beginnerMode),
@@ -350,9 +358,13 @@ export const generateStudyPlan = async (planData) => {
     }
 
     // Safety: clamp availableHoursPerDay minimum
-    if (requestBody.availableHoursPerDay < 0.5) requestBody.availableHoursPerDay = 4;
+    if (requestBody.availableHoursPerDay < 0.5)
+      requestBody.availableHoursPerDay = 4;
 
-    console.log("📤 Sending to /generate-plan:", JSON.stringify(requestBody, null, 2));
+    console.log(
+      "📤 Sending to /generate-plan:",
+      JSON.stringify(requestBody, null, 2),
+    );
 
     // Make API request
     const response = await fetch(`${ML_API_BASE_URL}/generate-plan`, {
@@ -368,12 +380,17 @@ export const generateStudyPlan = async (planData) => {
 
     if (!response.ok) {
       const errorBody = await response.json();
-      console.error("❌ API Error Response:", JSON.stringify(errorBody, null, 2));
+      console.error(
+        "❌ API Error Response:",
+        JSON.stringify(errorBody, null, 2),
+      );
       const detail = errorBody.detail;
       // Pydantic returns detail as array of objects or string
       const message = Array.isArray(detail)
-        ? detail.map(d => `${d.loc?.join('.')}: ${d.msg}`).join('; ')
-        : (typeof detail === 'string' ? detail : JSON.stringify(detail));
+        ? detail.map((d) => `${d.loc?.join(".")}: ${d.msg}`).join("; ")
+        : typeof detail === "string"
+          ? detail
+          : JSON.stringify(detail);
       throw new Error(message || "Plan generation failed");
     }
 
@@ -390,7 +407,9 @@ export const generateStudyPlan = async (planData) => {
     return plan;
   } catch (error) {
     if (error.name === "AbortError") {
-      throw new Error("ML API server not responding (timeout). Make sure it is running.");
+      throw new Error(
+        "ML API server not responding (timeout). Make sure it is running.",
+      );
     }
     console.error("Error generating study plan:", error);
     throw error;

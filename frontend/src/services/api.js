@@ -1,7 +1,19 @@
 import axios from "axios";
 
+// const api = axios.create({
+//   baseURL: "http://localhost:5000/api",
+//   headers: {
+//     "Content-Type": "application/json",
+//   },
+// });
+
+// [DEPLOYMENT UPDATE]: Use the Vercel environment variable for the Render API.
+export const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api";
+export const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
+
 const api = axios.create({
-  baseURL: "http://localhost:5000/api",
+  baseURL: API_BASE_URL,
   headers: {
     "Content-Type": "application/json",
   },
@@ -62,8 +74,9 @@ export const Endpoints = {
   // 6. External Real-Time Feeds (Like Jamendo)
   External: {
     // GET: Connects purely over internet (no backend required) to stream Lofi/chill study variants!
-    JamendoStream: (clientId) => `https://api.jamendo.com/v3.0/tracks/?client_id=${clientId}&format=json&limit=30&tags=lofi&audioformat=mp32`
-  }
+    JamendoStream: (clientId) =>
+      `https://api.jamendo.com/v3.0/tracks/?client_id=${clientId}&format=json&limit=30&tags=lofi&audioformat=mp32`,
+  },
 };
 
 export default api;
