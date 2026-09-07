@@ -1,0 +1,52 @@
+# GyaanMitra Project Overview
+
+## What is GyaanMitra?
+GyaanMitra (Knowledge Friend) is an AI-powered study assistant. It helps students plan their studies, stay focused with timers, and track their progress using machine learning.
+
+## Core Features
+1. **AI Study Planner**: Automatically creates a daily timetable so you know exactly what to study and when.
+2. **AI Advisor**: Tells you if your study plan is realistic. If you are falling behind, it suggests how many extra hours you need to study to finish on time.
+3. **Smart Timer**: A focus timer (Pomodoro style) with alarms to help you study without distractions.
+4. **Flashcards**: Helps you memorize topics by creating digital question-answer cards.
+5. **Notes**: A simple way to keep track of important study points.
+6. **Quiz & Progress**: Tracks your quiz scores to show how much you are improving.
+7. **Syllabus Parser**: You can upload a PDF syllabus, and the AI will automatically extract the subject and chapter names for you.
+
+## Tech Stack (The Tools Used)
+- **Frontend (UI)**: React.js, Vite, Material UI (for buttons/layouts), Chart.js (for graphs).
+- **Backend (Server)**: Node.js, Express.js.
+- **Database**: MySQL (using Sequelize to manage data).
+- **AI/ML**: Python, FastAPI (to run the AI), Scikit-learn (for predictions).
+- **APIs**: Google Gemini (to understand text) and OpenAI/LM Studio.
+
+## How the AI & Machine Learning Works
+- **The Model**: We use a "Random Forest" model in Python.
+- **What it Predicts**: It predicts the **Priority** of a subject (High, Normal, or Low).
+- **How it Predicts**: It looks at 5 things:
+  1. How hard the subject is (Difficulty).
+  2. How many days are left until the exam.
+  3. Your past scores in that subject.
+  4. How much syllabus you have already finished.
+  5. Your daily available study hours.
+- **Prediction Flow**: 
+  User Inputs Data -> ML Model Calculates Priority -> Scheduling Engine Creates Slots -> AI Advisor Checks Feasibility.
+
+## How the Study Planner Works (The Flow)
+1. **Adding Subjects**: You enter your subjects, exam dates, and number of chapters.
+2. **Setup**: You tell the app how many hours you can study each day and your preferred study times.
+3. **Generation**: The app sends this to the ML model. The model decides which subjects are most urgent.
+4. **Timetable**: It creates "Time Slots" (e.g., 10:00 AM - 11:30 AM: Physics Chapter 1). It ensures no two subjects overlap.
+5. **The Warning System**: If you have too much to study and not enough time, the "AI Advisor" shows a warning and tells you to increase your daily study hours.
+
+## Database Tables (Where Data is Saved)
+1. **users**: Saves your name, email, password, and settings.
+2. **Flashcards**: Saves your study questions and answers.
+3. **Notes**: Saves your sticky notes.
+4. **study_sessions**: Records every time you use the focus timer.
+5. **quiz_results**: Saves your scores after you take a quiz.
+6. **planner_subjects**: Saves the subjects you added to your planner.
+7. **planner_sessions**: Saves the actual daily timetable blocks created for you.
+8. **planner_recommendations**: Saves the advice and warnings given by the AI Advisor.
+
+## Project Flow (How everything connects)
+- **User clicks "Generate Plan"** -> **Frontend** sends data to **Backend** -> **Backend** asks the **ML API** for a plan -> **ML API** calculates the best schedule -> **Backend** saves it to **MySQL** -> **Frontend** displays the timetable and AI advice.
