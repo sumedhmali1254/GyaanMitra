@@ -3,6 +3,22 @@ import { AuthContext } from './AuthContext';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 
+const normalizeSyllabusValue = (value) =>
+  typeof value === "string"
+    ? value.trim().toLocaleLowerCase()
+    : JSON.stringify(value ?? null);
+
+const getSyllabusContentKey = (course) =>
+  JSON.stringify({
+    title: normalizeSyllabusValue(course.courseTitle),
+    chapters: (Array.isArray(course.chapters) ? course.chapters : []).map(
+      (chapter) => ({
+        name: normalizeSyllabusValue(chapter.name),
+        topics: normalizeSyllabusValue(chapter.topics),
+      }),
+    ),
+  });
+
 export const SettingsContext = createContext();
 
 export const useSettings = () => {
@@ -25,12 +41,42 @@ export const SettingsProvider = ({ children }) => {
   // PDF extraction state — lives in context so it survives page navigation
   const [isExtracting, setIsExtracting] = useState(false);
   const extractAbortRef = useRef(null);
+  const extractingFileHashesRef = useRef(new Set());
 
   const extractPDF = useCallback(async (file) => {
     if (!file) {
       toast.error('Please select a PDF file first.');
       return false;
     }
+
+    let sourceFileHash;
+    try {
+      const fileBuffer = await file.arrayBuffer();
+      const digest = await window.crypto.subtle.digest("SHA-256", fileBuffer);
+      sourceFileHash = Array.from(new Uint8Array(digest))
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join("");
+    } catch (error) {
+      console.error("Unable to verify the uploaded PDF:", error);
+      toast.error("Could not verify this PDF. Please try selecting it again.");
+      return false;
+    }
+
+    if (
+      syllabusData.some(
+        (course) =>
+          course.source === "pdf" && course.sourceFileHash === sourceFileHash,
+      )
+    ) {
+      toast("This PDF has already been uploaded and saved.");
+      return false;
+    }
+
+    if (extractingFileHashesRef.current.has(sourceFileHash)) {
+      toast("This PDF is already being processed.");
+      return false;
+    }
+    extractingFileHashesRef.current.add(sourceFileHash);
 
     const formData = new FormData();
     formData.append('file', file);
@@ -48,7 +94,25 @@ export const SettingsProvider = ({ children }) => {
       const data = response.data;
 
       if (data.success && data.data) {
-        setSyllabusData(prev => [...prev, { ...data.data, source: 'pdf' }]);
+        const extractedCourse = {
+          ...data.data,
+          source: 'pdf',
+          sourceFileName: file.name,
+          sourceFileHash,
+        };
+        const contentKey = getSyllabusContentKey(extractedCourse);
+        const existingContent = syllabusData.some(
+          (course) =>
+            course.source === "pdf" &&
+            getSyllabusContentKey(course) === contentKey,
+        );
+        if (existingContent) {
+          toast("This syllabus is already saved. You do not need to upload it again.", {
+            id: tid,
+          });
+          return false;
+        }
+        setSyllabusData(prev => [...prev, extractedCourse]);
         toast.success(`Successfully extracted ${data.data.courseTitle}!`, { id: tid });
         return true;
       } else {
@@ -65,10 +129,11 @@ export const SettingsProvider = ({ children }) => {
       toast.error(msg, { id: tid });
       return false;
     } finally {
+      extractingFileHashesRef.current.delete(sourceFileHash);
       setIsExtracting(false);
       extractAbortRef.current = null;
     }
-  }, []);
+  }, [syllabusData]);
 
   const cancelExtraction = useCallback(() => {
     if (extractAbortRef.current) {
@@ -215,8 +280,13 @@ export const SettingsProvider = ({ children }) => {
     setSyllabusData(prev => prev.filter((_, i) => i !== index));
   };
 
-  const clearSyllabusData = () => {
-    setSyllabusData([]);
+  const clearSyllabusData = (source) => {
+    if (!source) {
+      setSyllabusData([]);
+      return;
+    }
+
+    setSyllabusData((prev) => prev.filter((course) => course.source !== source));
   };
 
   const updateTimerSettings = (newSettings) => {

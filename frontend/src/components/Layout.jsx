@@ -5,13 +5,17 @@ import SubSidebar from "./SubSidebar";
 import SettingsSubSidebar from "./SettingsSubSidebar";
 import ChatSubSidebar from "./ChatSubSidebar";
 import Header from "./Header";
+import { usePersistentBoolean } from "../hooks/usePersistentBoolean";
 import { PlannerProvider } from "../context/PlannerContext";
 import "./Header.css";
 import "./SubSidebar.css";
 
 const Layout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  const [sidebarExpanded, setSidebarExpanded] = usePersistentBoolean(
+    "gyaanmitra.sidebar.main.expanded",
+    true,
+  );
   const location = useLocation();
 
   const isPlannerPage = location.pathname === "/planner";

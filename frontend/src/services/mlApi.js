@@ -322,8 +322,12 @@ export const generateStudyPlan = async (planData) => {
     // Build the request body
     const requestBody = {
       availableHoursPerDay: parseFloat(planData.availableHoursPerDay) || 4,
-      startHour: parseInt(planData.startHour) || 6,
-      endHour: parseInt(planData.endHour) || 20,
+      startHour: Number.isFinite(Number(planData.startHour))
+        ? Number(planData.startHour)
+        : 6,
+      endHour: Number.isFinite(Number(planData.endHour))
+        ? Number(planData.endHour)
+        : 20,
       // Include per-day availability if provided
       ...(planData.weeklyAvailability && {
         weeklyAvailability: planData.weeklyAvailability,
@@ -337,6 +341,9 @@ export const generateStudyPlan = async (planData) => {
           : null,
         startTime: s.startTime || "06:00 AM",
         endTime: s.endTime || "10:00 PM",
+        ...(s.weeklyAvailability && {
+          weeklyAvailability: s.weeklyAvailability,
+        }),
         beginnerMode: Boolean(s.beginnerMode),
         ...(s.beginnerMode
           ? {

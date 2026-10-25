@@ -62,9 +62,24 @@ export const ChatProvider = ({ children }) => {
 
   // Health check for LM Studio
   useEffect(() => {
+    let isActive = true;
+    let isCheckingHealth = false;
+    let healthRequestController;
+
     const checkHealth = async () => {
+      if (document.hidden || isCheckingHealth) return;
+
+      isCheckingHealth = true;
+      healthRequestController = new AbortController();
       try {
-        const res = await api.get("/ai-health");
+        const res = await api.get("/ai-health", {
+          params: { check: Date.now() },
+          signal: healthRequestController.signal,
+          timeout: 7000,
+          headers: { "Cache-Control": "no-cache" },
+        });
+        if (!isActive) return;
+
         if (res.data?.connected) {
           setAiStatus("connected");
           setAiModels(res.data.models || []);
@@ -73,13 +88,32 @@ export const ChatProvider = ({ children }) => {
           setAiModels([]);
         }
       } catch (error) {
+        if (!isActive || error.code === "ERR_CANCELED") return;
         setAiStatus("disconnected");
         setAiModels([]);
+      } finally {
+        isCheckingHealth = false;
       }
     };
+
+    const checkWhenVisible = () => {
+      if (!document.hidden) checkHealth();
+    };
+
     checkHealth();
-    const interval = setInterval(checkHealth, 30000);
-    return () => clearInterval(interval);
+    const interval = setInterval(checkHealth, 5000);
+    document.addEventListener("visibilitychange", checkWhenVisible);
+    window.addEventListener("focus", checkWhenVisible);
+    window.addEventListener("online", checkWhenVisible);
+
+    return () => {
+      isActive = false;
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", checkWhenVisible);
+      window.removeEventListener("focus", checkWhenVisible);
+      window.removeEventListener("online", checkWhenVisible);
+      healthRequestController?.abort();
+    };
   }, []);
 
   const activeSession = chatSessions.find(s => s.id === activeSessionId);

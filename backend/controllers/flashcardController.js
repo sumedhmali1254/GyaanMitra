@@ -5,7 +5,7 @@ exports.getFlashcards = async (req, res) => {
   try {
     const { source } = req.query;
     const where = { userId: req.user.id };
-    if (source) where.source = source;
+    if (source && source !== "all") where.source = source;
 
     const flashcards = await Flashcard.findAll({ where });
     res.json({ success: true, flashcards });
@@ -198,5 +198,4 @@ exports.generateAllFlashcards = async (req, res) => {
     res.status(500).json({ success: false, message: "Bulk generation failed", error: error.message });
   }
 };
-
 

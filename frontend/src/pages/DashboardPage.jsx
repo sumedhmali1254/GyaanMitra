@@ -4,11 +4,13 @@ import { Bar, Line, Doughnut } from "react-chartjs-2";
 import "chart.js/auto";
 import { AuthContext } from "../context/AuthContext";
 import { useSettings } from "../context/SettingsContext";
+import { useTimer } from "../context/TimerContext";
 import api from "../services/api";
 
 const DashboardPage = () => {
   const { user } = useContext(AuthContext);
   const { syllabusData } = useSettings();
+  const { liveSession } = useTimer();
   const [sessions, setSessions] = useState([]);
   const [notes, setNotes] = useState([]);
   const [quizResults, setQuizResults] = useState([]);
@@ -18,35 +20,83 @@ const DashboardPage = () => {
   const firstName = user?.firstName || user?.username?.split(" ")[0] || user?.name?.split(" ")[0] || "Learner";
 
   useEffect(() => {
-    const fetchData = async () => {
+    let isActive = true;
+    let isFetching = false;
+
+    const fetchData = async (showInitialLoading = false) => {
+      if (!user || isFetching || (document.hidden && !showInitialLoading)) return;
+      isFetching = true;
+
       try {
-        setLoading(true);
-        const [statsRes, notesRes, quizRes] = await Promise.all([
+        if (showInitialLoading) setLoading(true);
+        const results = await Promise.allSettled([
           api.get("/sessions/stats"),
           api.get("/notes"),
-          api.get("/quiz/stats")
+          api.get("/quiz/stats"),
         ]);
 
-        if (statsRes.data.success) {
-          setSessions(statsRes.data.data);
+        if (!isActive) return;
+
+        const [sessionsResult, notesResult, quizResult] = results;
+        if (sessionsResult.status === "fulfilled" && sessionsResult.value.data.success) {
+          setSessions(sessionsResult.value.data.data || []);
+        } else if (sessionsResult.status === "rejected") {
+          console.error("Error fetching dashboard study sessions:", sessionsResult.reason);
         }
-        if (notesRes.data.success) {
-          setNotes(notesRes.data.data);
+
+        if (notesResult.status === "fulfilled" && notesResult.value.data.success) {
+          setNotes(notesResult.value.data.data || []);
+        } else if (notesResult.status === "rejected") {
+          console.error("Error fetching dashboard notes:", notesResult.reason);
         }
-        if (quizRes.data.success) {
-          setQuizResults(quizRes.data.data);
+
+        if (quizResult.status === "fulfilled" && quizResult.value.data.success) {
+          setQuizResults(quizResult.value.data.data || []);
+        } else if (quizResult.status === "rejected") {
+          console.error("Error fetching dashboard quiz results:", quizResult.reason);
         }
-      } catch (error) {
-        console.error("Error fetching dashboard data:", error);
       } finally {
-        setLoading(false);
+        isFetching = false;
+        if (isActive && showInitialLoading) setLoading(false);
       }
     };
-    if (user) fetchData();
+
+    const refreshWhenVisible = () => {
+      if (!document.hidden) fetchData();
+    };
+
+    if (user) {
+      fetchData(true);
+      const intervalId = window.setInterval(() => fetchData(), 30000);
+      document.addEventListener("visibilitychange", refreshWhenVisible);
+      window.addEventListener("focus", refreshWhenVisible);
+      window.addEventListener("study-session-updated", refreshWhenVisible);
+
+      return () => {
+        isActive = false;
+        window.clearInterval(intervalId);
+        document.removeEventListener("visibilitychange", refreshWhenVisible);
+        window.removeEventListener("focus", refreshWhenVisible);
+        window.removeEventListener("study-session-updated", refreshWhenVisible);
+      };
+    }
+
+    setSessions([]);
+    setNotes([]);
+    setQuizResults([]);
+    setLoading(false);
+
+    return () => {
+      isActive = false;
+    };
   }, [user]);
 
   const [studyPeriod, setStudyPeriod] = useState("week");
   const [quizPeriod, setQuizPeriod] = useState("week");
+  const studySessions = useMemo(
+    () => (liveSession ? [...sessions, liveSession] : sessions),
+    [sessions, liveSession],
+  );
 
   // Aggregate Study Hours by Day
   const studyData = useMemo(() => {
@@ -87,8 +137,9 @@ const DashboardPage = () => {
       counts = new Array(30).fill(0);
     }
 
-    sessions.forEach(s => {
+    studySessions.forEach(s => {
       const date = new Date(s.startTime);
+      date.setHours(0, 0, 0, 0);
       const diffDays = Math.floor((today - date) / (1000 * 60 * 60 * 24));
 
       if (studyPeriod === "month") {
@@ -96,7 +147,6 @@ const DashboardPage = () => {
           counts[29 - diffDays] += (s.duration / 60);
         }
       } else {
-        const checkIdx = (filterDays - 1 - diffDays);
         if (diffDays >= offset && diffDays < filterDays) {
           const arrIdx = (studyPeriod === "last-week") ? (diffDays - 7) : diffDays;
           const finalIdx = (studyPeriod === "last-week") ? (6 - arrIdx) : (6 - arrIdx);
@@ -116,7 +166,7 @@ const DashboardPage = () => {
         borderRadius: 8,
       }]
     };
-  }, [sessions, studyPeriod]);
+  }, [studySessions, studyPeriod]);
 
   const progressData = useMemo(() => {
     const hasData = notes.length > 0;
@@ -154,20 +204,33 @@ const DashboardPage = () => {
       filtered = filtered.filter(r => r.courseTitle === selectedQuizCourse);
     }
 
-    // Sort results by date
-    const sortedResults = filtered.sort((a, b) => new Date(a.completedAt) - new Date(b.completedAt));
+    const now = new Date();
+    const startDate = new Date(now);
+    startDate.setHours(0, 0, 0, 0);
+    if (quizPeriod === "week") startDate.setDate(startDate.getDate() - 6);
+    if (quizPeriod === "month") startDate.setDate(startDate.getDate() - 29);
+    if (quizPeriod === "year") startDate.setMonth(0, 1);
+
+    const sortedResults = filtered
+      .filter((result) => {
+        const completedAt = new Date(result.completedAt || result.createdAt);
+        return !Number.isNaN(completedAt.getTime()) &&
+          completedAt >= startDate &&
+          completedAt <= now;
+      })
+      .sort((a, b) => new Date(a.completedAt || a.createdAt) - new Date(b.completedAt || b.createdAt));
     const hasResults = sortedResults.length > 0;
 
     const labels = hasResults
-      ? sortedResults.map((r, i) => {
-        const d = new Date(r.completedAt);
+      ? sortedResults.map((r) => {
+        const d = new Date(r.completedAt || r.createdAt);
         return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
       })
-      : ["Aug 1", "Aug 2", "Aug 3", "Aug 4"];
+      : ["No quizzes"];
 
     const data = hasResults
-      ? sortedResults.map(r => r.accuracy)
-      : [0, 0, 0, 0];
+      ? sortedResults.map((r) => Number(r.accuracy) || 0)
+      : [0];
 
     return {
       labels,
@@ -185,7 +248,7 @@ const DashboardPage = () => {
         },
       ],
     };
-  }, [quizResults, selectedQuizCourse]);
+  }, [quizResults, selectedQuizCourse, quizPeriod]);
 
   const chartOptions = {
     responsive: true,
@@ -238,55 +301,32 @@ const DashboardPage = () => {
 
   // General Stats
   const statsOverview = useMemo(() => {
-    const totalMinutes = sessions.reduce((sum, s) => sum + s.duration, 0);
-    const completedCount = sessions.filter(s => s.status === "completed").length;
+    const totalMinutes = studySessions.reduce((sum, s) => sum + (Number(s.duration) || 0), 0);
+    const completedCount = studySessions.filter(s => s.status === "completed").length;
 
     return [
       {
         label: "Study Time",
-        value: totalMinutes < 60 ? `${totalMinutes}m` : `${(totalMinutes / 60).toFixed(1)}h`,
-        change: "Active Goal",
+        value: totalMinutes < 60 ? `${totalMinutes.toFixed(1)}m` : `${(totalMinutes / 60).toFixed(1)}h`,
+        change: liveSession ? "Updating live" : "Active Goal",
         icon: "bi-clock-history",
         color: "primary",
       },
       {
         label: "Focus Sessions",
-        value: sessions.length.toString(),
-        change: `+${completedCount} done`,
+        value: studySessions.length.toString(),
+        change: liveSession ? `${completedCount} done, 1 in progress` : `+${completedCount} done`,
         icon: "bi-lightning-charge",
         color: "success",
       }
     ];
-  }, [sessions]);
+  }, [studySessions, liveSession]);
 
   const stats = useMemo(() => {
-    // Streak Calculation logic
-    const activeDates = new Set();
-    sessions.forEach(s => {
-      if (s.duration >= 5) activeDates.add(new Date(s.startTime).toDateString());
-    });
-
-    let streakCount = 0;
-    if (activeDates.size > 0) {
-      let checkDate = new Date();
-      checkDate.setHours(0, 0, 0, 0);
-
-      const todayStr = checkDate.toDateString();
-      const yesterday = new Date(checkDate);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toDateString();
-
-      const hasToday = activeDates.has(todayStr);
-      const hasYesterday = activeDates.has(yesterdayStr);
-
-      if (hasToday || hasYesterday) {
-        let currentIter = hasToday ? checkDate : yesterday;
-        while (activeDates.has(currentIter.toDateString())) {
-          streakCount++;
-          currentIter.setDate(currentIter.getDate() - 1);
-        }
-      }
-    }
+    const loginStreak = Math.max(
+      0,
+      Number(user?.loginStreak ?? user?.settings?.loginStreak) || 0,
+    );
 
     return [
       ...statsOverview,
@@ -298,14 +338,14 @@ const DashboardPage = () => {
         color: "warning",
       },
       {
-        label: "Current Streak",
-        value: `${streakCount} days`,
-        change: streakCount > 0 ? "+100%" : "Start today!",
+        label: "Login Streak",
+        value: `${loginStreak} days`,
+        change: loginStreak > 0 ? "Consecutive days" : "Log in today to start",
         icon: "bi-fire",
         color: "info",
       },
     ];
-  }, [statsOverview, syllabusData, sessions]);
+  }, [statsOverview, syllabusData, user?.loginStreak, user?.settings?.loginStreak]);
 
   const quickActions = [
     {
@@ -347,7 +387,7 @@ const DashboardPage = () => {
       }));
   }, [notes]);
 
-  if (loading && sessions.length === 0) {
+  if (loading && sessions.length === 0 && !liveSession) {
     return (
       <div className="page-container d-flex align-items-center justify-content-center" style={{ minHeight: "60vh" }}>
         <div className="spinner-border text-primary" role="status">

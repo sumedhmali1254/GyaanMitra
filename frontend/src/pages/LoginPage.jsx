@@ -4,6 +4,8 @@ import { toast } from "react-hot-toast";
 import { AuthContext } from "../context/AuthContext";
 import { useNotifications } from "../context/NotificationContext";
 import api from "../services/api";
+import getLocalDateKey from "../utils/dateKey";
+import "./AuthPages.css";
 
 const LoginPage = () => {
   const { login, guestLogin } = useContext(AuthContext);
@@ -12,6 +14,7 @@ const LoginPage = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isGuestLoading, setIsGuestLoading] = useState(false);
 
@@ -24,6 +27,7 @@ const LoginPage = () => {
       const res = await api.post("/auth/login", {
         email,
         password,
+        loginDate: getLocalDateKey(),
       });
 
       login(res.data.data);
@@ -64,12 +68,12 @@ const LoginPage = () => {
 
   return (
     <div
-      className="d-flex align-items-center justify-content-center min-vh-100"
+      className="auth-page auth-login-page d-flex align-items-center justify-content-center"
       style={{
         background:
           "linear-gradient(135deg, #fefeff 0%, #f7f3f0 50%, #eee1da 100%)",
         position: "relative",
-        overflow: "hidden",
+        overflowX: "hidden",
       }}
     >
       {/* Background Decorations */}
@@ -98,11 +102,11 @@ const LoginPage = () => {
         }}
       ></div>
 
-      <div className="container" style={{ position: "relative", zIndex: 1 }}>
+      <div className="container auth-page-container" style={{ position: "relative", zIndex: 1 }}>
         <div className="row justify-content-center">
-          <div className="col-md-6 col-lg-4">
+          <div className="col-12 col-md-9 col-lg-7 col-xl-6">
             <div
-              className="card animate-fade-in"
+              className="card auth-card auth-login-card animate-fade-in"
               style={{
                 background: "rgba(255, 255, 255, 0.95)",
                 backdropFilter: "blur(20px)",
@@ -275,21 +279,15 @@ const LoginPage = () => {
                 <div className="d-flex align-items-center mb-4">
                   <input
                     type="checkbox"
-                    className="form-check-input"
+                    className="form-check-input auth-checkbox"
                     id="rememberMe"
-                    style={{
-                      backgroundColor: "#f8fafc",
-                      borderColor: "#e2e8f0",
-                      accentColor: "#795548",
-                      width: "18px",
-                      height: "18px",
-                      marginRight: "0.5rem",
-                    }}
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
                   />
                   <label
                     className="form-check-label"
                     htmlFor="rememberMe"
-                    style={{ color: "#64748b", fontSize: "0.9rem" }}
+                    style={{ color: "#64748b", fontSize: "0.9rem", cursor: "pointer" }}
                   >
                     Remember me
                   </label>

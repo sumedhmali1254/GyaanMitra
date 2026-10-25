@@ -3,57 +3,108 @@ import { Line, Bar, Doughnut, Radar } from "react-chartjs-2";
 import "chart.js/auto";
 import { AuthContext } from "../context/AuthContext";
 import { useSettings } from "../context/SettingsContext";
+import { useTimer } from "../context/TimerContext";
 import api from "../services/api";
+
+const startOfDay = (date) => {
+  const result = new Date(date);
+  result.setHours(0, 0, 0, 0);
+  return result;
+};
+
+const dateForRange = (range, now) => {
+  const start = startOfDay(now);
+  if (range === "week") start.setDate(start.getDate() - 6);
+  if (range === "month") start.setDate(start.getDate() - 29);
+  if (range === "year") start.setMonth(0, 1);
+  return start;
+};
 
 const AnalyticsDashboardPage = () => {
   const { user, token } = useContext(AuthContext);
   const { syllabusData } = useSettings();
+  const { liveSession } = useTimer();
   const [sessions, setSessions] = useState([]);
   const [quizResults, setQuizResults] = useState([]);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState("week");
 
   useEffect(() => {
+    let isActive = true;
+    let isFetching = false;
+
     const fetchAnalyticsData = async () => {
+      if (isFetching || document.hidden) return;
+      isFetching = true;
       try {
         const [statsRes, quizRes] = await Promise.all([
           api.get("/sessions/stats"),
           api.get("/quiz/stats")
         ]);
         
-        if (statsRes.data.success) {
+        if (isActive && statsRes.data.success) {
           setSessions(statsRes.data.data);
         }
-        if (quizRes.data.success) {
+        if (isActive && quizRes.data.success) {
           setQuizResults(quizRes.data.data);
         }
       } catch (error) {
         console.error("Error fetching analytics stats:", error);
       } finally {
-        setLoading(false);
+        isFetching = false;
+        if (isActive) setLoading(false);
       }
     };
-    if (token) fetchAnalyticsData();
+
+    const refreshWhenVisible = () => {
+      if (!document.hidden) fetchAnalyticsData();
+    };
+
+    if (token) {
+      fetchAnalyticsData();
+      const intervalId = window.setInterval(refreshWhenVisible, 30000);
+      document.addEventListener("visibilitychange", refreshWhenVisible);
+      window.addEventListener("focus", refreshWhenVisible);
+      window.addEventListener("study-session-updated", refreshWhenVisible);
+      return () => {
+        isActive = false;
+        window.clearInterval(intervalId);
+        document.removeEventListener("visibilitychange", refreshWhenVisible);
+        window.removeEventListener("focus", refreshWhenVisible);
+        window.removeEventListener("study-session-updated", refreshWhenVisible);
+      };
+    }
+
+    setSessions([]);
+    setQuizResults([]);
+    setLoading(false);
+    return () => {
+      isActive = false;
+    };
   }, [token]);
 
-  // 1. Dynamic filtering based on active period
   const filteredSessions = useMemo(() => {
     const now = new Date();
-    const rangeMap = { day: 1, week: 7, month: 30, year: 365 };
-    const days = rangeMap[timeRange] || 7;
-    return sessions.filter(s => {
-      const diff = (now - new Date(s.startTime)) / (1000 * 60 * 60 * 24);
-      return diff <= days;
+    const rangeStart = dateForRange(timeRange, now);
+    const sessionsIncludingActive = liveSession
+      ? [...sessions, liveSession]
+      : sessions;
+    return sessionsIncludingActive.filter((session) => {
+      const startTime = new Date(session.startTime);
+      return !Number.isNaN(startTime.getTime()) &&
+        startTime >= rangeStart &&
+        startTime <= now;
     });
-  }, [sessions, timeRange]);
+  }, [sessions, liveSession, timeRange]);
 
   const filteredQuizzes = useMemo(() => {
     const now = new Date();
-    const rangeMap = { day: 1, week: 7, month: 30, year: 365 };
-    const days = rangeMap[timeRange] || 7;
-    return quizResults.filter(q => {
-      const diff = (now - new Date(q.completedAt)) / (1000 * 60 * 60 * 24);
-      return diff <= days;
+    const rangeStart = dateForRange(timeRange, now);
+    return quizResults.filter((quiz) => {
+      const completedAt = new Date(quiz.completedAt || quiz.createdAt);
+      return !Number.isNaN(completedAt.getTime()) &&
+        completedAt >= rangeStart &&
+        completedAt <= now;
     });
   }, [quizResults, timeRange]);
 
@@ -63,38 +114,41 @@ const AnalyticsDashboardPage = () => {
     let data = [];
     
     if (timeRange === "day") {
-      labels = ["Last 24h"]; 
-      const total = filteredSessions.reduce((acc, s) => acc + (s.duration / 60), 0);
+      labels = ["Today"];
+      const total = filteredSessions.reduce((acc, session) => acc + ((Number(session.duration) || 0) / 60), 0);
       data = [total];
     } else if (timeRange === "week") {
       const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
       const counts = new Array(7).fill(0);
-      for (let i = 6; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
+      const rangeStart = dateForRange("week", new Date());
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(rangeStart);
+        d.setDate(d.getDate() + i);
         labels.push(days[(d.getDay() + 6) % 7]);
       }
-      filteredSessions.forEach(s => {
-        const diff = Math.floor((new Date() - new Date(s.startTime)) / (1000 * 60 * 60 * 24));
-        if (diff < 7) counts[6 - diff] += (s.duration / 60);
+      filteredSessions.forEach((session) => {
+        const sessionDate = startOfDay(new Date(session.startTime));
+        const dayIndex = Math.round((sessionDate - rangeStart) / 86400000);
+        if (dayIndex >= 0 && dayIndex < 7) counts[dayIndex] += (Number(session.duration) || 0) / 60;
       });
       data = counts;
     } else if (timeRange === "month") {
-      labels = ["W1", "W2", "W3", "W4"];
-      const counts = new Array(4).fill(0);
-      filteredSessions.forEach(s => {
-        const diff = Math.floor((new Date() - new Date(s.startTime)) / (1000 * 60 * 60 * 24));
-        const weekIdx = Math.floor(diff / 7);
-        if (weekIdx < 4) counts[3 - weekIdx] += (s.duration / 60);
+      labels = ["Week 1", "Week 2", "Week 3", "Week 4", "Week 5"];
+      const counts = new Array(5).fill(0);
+      const rangeStart = dateForRange("month", new Date());
+      filteredSessions.forEach((session) => {
+        const sessionDate = startOfDay(new Date(session.startTime));
+        const weekIndex = Math.floor((sessionDate - rangeStart) / (7 * 86400000));
+        if (weekIndex >= 0 && weekIndex < 5) counts[weekIndex] += (Number(session.duration) || 0) / 60;
       });
       data = counts;
     } else {
       labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
       const counts = new Array(12).fill(0);
-      filteredSessions.forEach(s => {
-        const date = new Date(s.startTime);
+      filteredSessions.forEach((session) => {
+        const date = new Date(session.startTime);
         if (new Date().getFullYear() === date.getFullYear()) {
-          counts[date.getMonth()] += (s.duration / 60);
+          counts[date.getMonth()] += (Number(session.duration) || 0) / 60;
         }
       });
       data = counts;
@@ -143,30 +197,37 @@ const AnalyticsDashboardPage = () => {
 
   // Subject Progress
   const progressData = useMemo(() => {
-    const subjects = syllabusData.map(s => s.courseTitle || "Course");
-    const data = syllabusData.map(() => Math.floor(Math.random() * 40) + 60);
+    const subjects = syllabusData.map((course) => course.courseTitle || "Course");
+    const data = syllabusData.map((course) => {
+      const courseQuizzes = filteredQuizzes.filter(
+        (result) => result.courseTitle === course.courseTitle,
+      );
+      return courseQuizzes.length
+        ? courseQuizzes.reduce((sum, result) => sum + (Number(result.accuracy) || 0), 0) / courseQuizzes.length
+        : 0;
+    });
     
     return {
       labels: subjects.length > 0 ? subjects : ["No Subjects"],
       datasets: [
         {
-          label: "Progress %",
+          label: "Average Quiz Accuracy %",
           data: subjects.length > 0 ? data : [0],
           backgroundColor: "rgba(121, 85, 72, 0.7)",
           borderRadius: 8,
         },
       ],
     };
-  }, [syllabusData]);
+  }, [syllabusData, filteredQuizzes]);
 
   const stats = useMemo(() => {
-    const totalMin = filteredSessions.reduce((sum, s) => sum + s.duration, 0);
-    const uniqueDays = new Set(filteredSessions.map(s => new Date(s.startTime).toDateString()));
+    const totalMin = filteredSessions.reduce((sum, session) => sum + (Number(session.duration) || 0), 0);
+    const loginStreak = Math.max(0, Number(user?.loginStreak ?? user?.settings?.loginStreak) || 0);
     
     return [
       {
         label: "Total Study Time",
-        value: totalMin < 60 ? `${totalMin}m` : `${(totalMin / 60).toFixed(1)}h`,
+        value: totalMin < 60 ? `${totalMin.toFixed(1)}m` : `${(totalMin / 60).toFixed(1)}h`,
         change: `Last ${timeRange}`,
         icon: "bi-clock-history",
         color: "primary",
@@ -174,7 +235,7 @@ const AnalyticsDashboardPage = () => {
       {
         label: "Focus Sessions",
         value: filteredSessions.length.toString(),
-        change: "Active",
+        change: liveSession ? "Focus session in progress" : "Recorded sessions",
         icon: "bi-lightning-charge",
         color: "success",
       },
@@ -186,21 +247,23 @@ const AnalyticsDashboardPage = () => {
         color: "warning",
       },
       {
-        label: "Study Streak",
-        value: `${uniqueDays.size} days`,
-        change: "Target Period",
+        label: "Login Streak",
+        value: `${loginStreak} days`,
+        change: "Consecutive days",
         icon: "bi-fire",
         color: "info",
       },
     ];
-  }, [filteredSessions, syllabusData, timeRange]);
+  }, [filteredSessions, liveSession, syllabusData, timeRange, user?.loginStreak, user?.settings?.loginStreak]);
 
   // Fetch real quiz stats for the chart
   const quizData = useMemo(() => {
     const hasResults = filteredQuizzes.length > 0;
-    const sorted = [...filteredQuizzes].sort((a, b) => new Date(a.completedAt) - new Date(b.completedAt));
-    const labels = hasResults ? sorted.map((r, i) => `Quiz ${i+1}`) : ["W1", "W2", "W3", "W4"];
-    const data = hasResults ? sorted.map(r => r.accuracy) : [0, 0, 0, 0];
+    const sorted = [...filteredQuizzes].sort(
+      (a, b) => new Date(a.completedAt || a.createdAt) - new Date(b.completedAt || b.createdAt),
+    );
+    const labels = hasResults ? sorted.map((r, i) => `Quiz ${i+1}`) : ["No quizzes"];
+    const data = hasResults ? sorted.map((r) => Number(r.accuracy) || 0) : [0];
 
     return {
       labels,
@@ -218,35 +281,48 @@ const AnalyticsDashboardPage = () => {
     };
   }, [filteredQuizzes]);
 
-  // Calibrate Skill Radar based on real data
-  const skillData = useMemo(() => {
-    const avgAccuracy = filteredQuizzes.length > 0 
-      ? filteredQuizzes.reduce((sum, r) => sum + r.accuracy, 0) / filteredQuizzes.length 
+  const personaMetrics = useMemo(() => {
+    const averageAccuracy = filteredQuizzes.length
+      ? filteredQuizzes.reduce((sum, quiz) => sum + (Number(quiz.accuracy) || 0), 0) / filteredQuizzes.length
       : 0;
-    
-    // Focus skill from sessions
-    const totalHours = filteredSessions.reduce((sum, s) => sum + s.duration, 0) / 60;
-    const focusLevel = Math.min(100, (totalHours * 10)); // Arbitrary scaling
+    const activeDays = new Set(
+      filteredSessions.map((session) => new Date(session.startTime).toDateString()),
+    ).size;
+    const now = new Date();
+    const rangeDays = timeRange === "day"
+      ? 1
+      : timeRange === "week"
+        ? 7
+        : timeRange === "month"
+          ? 30
+          : Math.floor((now - dateForRange("year", now)) / 86400000) + 1;
+    const completedSessions = filteredSessions.filter((session) => session.status === "completed").length;
+    const coursesWithQuizzes = syllabusData.filter((course) =>
+      filteredQuizzes.some((quiz) => quiz.courseTitle === course.courseTitle),
+    ).length;
+    const loginStreak = Math.max(0, Number(user?.loginStreak ?? user?.settings?.loginStreak) || 0);
 
-    return {
-      labels: ["Problem Solving", "Memory", "Focus", "Speed", "Accuracy"],
-      datasets: [
-        {
-          label: "Your Scholarly Profile",
-          data: [
-            filteredQuizzes.length > 0 ? 80 : 0, 
-            filteredSessions.length > 0 ? 75 : 0,  
-            focusLevel,                   
-            filteredQuizzes.length > 0 ? 70 : 0, 
-            avgAccuracy,                  
-          ],
-          backgroundColor: "rgba(121, 85, 72, 0.5)",
-          borderColor: "rgba(121, 85, 72, 1)",
-          pointBackgroundColor: "rgba(121, 85, 72, 1)",
-        },
-      ],
-    };
-  }, [filteredQuizzes, filteredSessions]);
+    return [
+      { skill: "Quiz Accuracy", value: averageAccuracy, color: "primary" },
+      { skill: "Study Consistency", value: rangeDays ? (activeDays / rangeDays) * 100 : 0, color: "info" },
+      { skill: "Session Completion", value: filteredSessions.length ? (completedSessions / filteredSessions.length) * 100 : 0, color: "success" },
+      { skill: "Course Coverage", value: syllabusData.length ? (coursesWithQuizzes / syllabusData.length) * 100 : 0, color: "warning" },
+      { skill: "Weekly Login Streak", value: Math.min(loginStreak / 7, 1) * 100, color: "accent" },
+    ];
+  }, [filteredQuizzes, filteredSessions, syllabusData, timeRange, user?.loginStreak, user?.settings?.loginStreak]);
+
+  const skillData = useMemo(() => ({
+    labels: personaMetrics.map((metric) => metric.skill),
+    datasets: [
+      {
+        label: "Study Habits",
+        data: personaMetrics.map((metric) => Math.min(100, Math.max(0, metric.value))),
+        backgroundColor: "rgba(121, 85, 72, 0.5)",
+        borderColor: "rgba(121, 85, 72, 1)",
+        pointBackgroundColor: "rgba(121, 85, 72, 1)",
+      },
+    ],
+  }), [personaMetrics]);
 
   const chartOptions = {
     responsive: true,
@@ -290,6 +366,8 @@ const AnalyticsDashboardPage = () => {
         angleLines: { color: "rgba(255, 255, 255, 0.1)" },
         pointLabels: { color: "#94a3b8" },
         ticks: { display: false },
+        min: 0,
+        max: 100,
       },
     },
   };
@@ -390,7 +468,7 @@ const AnalyticsDashboardPage = () => {
         </div>
         <div className="col-lg-6">
           <div className="card" style={{ padding: "1.5rem", borderRadius: "1.25rem" }}>
-            <h5 className="mb-4 fw-bold">Learning Progress by Course</h5>
+            <h5 className="mb-4 fw-bold">Quiz Accuracy by Course</h5>
             <div style={{ height: "250px" }}>
               <Bar data={progressData} options={chartOptions} />
             </div>
@@ -415,23 +493,17 @@ const AnalyticsDashboardPage = () => {
                 </div>
               </div>
               <div className="col-md-6 d-flex flex-column justify-content-center px-lg-5">
-                {[
-                  { skill: "Problem Solving", value: 80, color: "primary" },
-                  { skill: "Memory", value: 75, color: "info" },
-                  { skill: "Focus", value: 85, color: "success" },
-                  { skill: "Speed", value: 70, color: "warning" },
-                  { skill: "Accuracy", value: 90, color: "accent" },
-                ].map((item, idx) => (
+                {personaMetrics.map((item, idx) => (
                   <div key={idx} className="mb-4">
                     <div className="d-flex justify-content-between mb-1">
                       <span style={{ color: "var(--text-secondary)", fontWeight: "500" }}>{item.skill}</span>
-                      <span style={{ color: `var(--${item.color})`, fontWeight: "700" }}>{item.value}%</span>
+                      <span style={{ color: `var(--${item.color})`, fontWeight: "700" }}>{Math.round(item.value)}%</span>
                     </div>
                     <div className="progress" style={{ height: "8px", borderRadius: "4px", background: "rgba(0,0,0,0.05)" }}>
                       <div
                         className="progress-bar"
                         style={{
-                          width: `${item.value}%`,
+                          width: `${Math.min(100, Math.max(0, item.value))}%`,
                           background: `var(--${item.color})`,
                           borderRadius: "4px"
                         }}

@@ -3,8 +3,13 @@ import "./SubSidebar.css";
 import { useSettings } from "../context/SettingsContext";
 import { AuthContext } from "../context/AuthContext";
 import { useChat } from "../context/ChatContext";
+import { usePersistentBoolean } from "../hooks/usePersistentBoolean";
 
 const SettingsSubSidebar = () => {
+  const [isCollapsed, setIsCollapsed] = usePersistentBoolean(
+    "gyaanmitra.sidebar.settings.collapsed",
+    false,
+  );
   const { activeTab, setActiveTab } = useSettings();
   const { logout } = useContext(AuthContext);
   const { aiStatus } = useChat();
@@ -15,7 +20,18 @@ const SettingsSubSidebar = () => {
   const statusBorder = aiStatus === "connected" ? "rgba(34,197,94,0.2)" : aiStatus === "checking" ? "rgba(245,158,11,0.2)" : "rgba(239,68,68,0.2)";
 
   return (
-    <aside className="sub-sidebar">
+    <aside className={`sub-sidebar collapsible-sub-sidebar ${isCollapsed ? "is-collapsed" : ""}`}>
+      <button
+        type="button"
+        className="sub-sidebar-toggle"
+        onClick={() => setIsCollapsed((collapsed) => !collapsed)}
+        aria-label={isCollapsed ? "Expand settings sidebar" : "Collapse settings sidebar"}
+        aria-expanded={!isCollapsed}
+        title={isCollapsed ? "Expand settings sidebar" : "Collapse settings sidebar"}
+      >
+        <i className={`bi ${isCollapsed ? "bi-chevron-right" : "bi-chevron-left"}`} />
+      </button>
+      <span className="sub-sidebar-collapsed-label" aria-hidden="true">SETTINGS</span>
       {/* Fixed Header */}
       <div className="sub-sidebar-header">
         <h3 className="sub-sidebar-title">

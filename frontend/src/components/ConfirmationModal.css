@@ -59,6 +59,10 @@
   text-align: center;
 }
 
+.custom-modal-footer {
+  margin-top: 1rem;
+}
+
 .modal-icon-circle {
   transition: transform 0.3s ease;
 }

@@ -4,59 +4,101 @@ import React, {
   useEffect,
   useRef,
   useContext,
+  useCallback,
 } from "react";
 import { SettingsContext } from "./SettingsContext";
 import { AuthContext } from "./AuthContext";
 
-export const MusicContext = createContext();
+const MUSIC_STORAGE_KEY = "gyaanmitra_music_state";
+
+const getTrackDuration = (track) => {
+  const [minutes, seconds] = (track?.duration || "0:00").split(":").map(Number);
+  return Number.isFinite(minutes) && Number.isFinite(seconds)
+    ? minutes * 60 + seconds
+    : 0;
+};
+
+const readSavedMusic = () => {
+  try {
+    return JSON.parse(localStorage.getItem(MUSIC_STORAGE_KEY) || "null");
+  } catch (error) {
+    console.error("Unable to restore music state:", error);
+    return null;
+  }
+};
+
+const noop = () => {};
+const EMPTY_MUSIC_CONTEXT = {
+  isPlaying: false,
+  setIsPlaying: noop,
+  volume: 0,
+  setVolume: noop,
+  changeVolume: noop,
+  current: null,
+  setCurrent: noop,
+  progress: 0,
+  setProgress: noop,
+  currentTime: 0,
+  duration: 0,
+  seekTo: noop,
+  seekBy: noop,
+  shuffle: false,
+  setShuffle: noop,
+  repeat: "none",
+  setRepeat: noop,
+  tracks: [],
+  nextTrack: noop,
+  prevTrack: noop,
+  togglePlay: noop,
+  playTrack: noop,
+  toggleLike: noop,
+  likedSongs: [],
+  history: [],
+  isMuted: false,
+  setIsMuted: noop,
+  hasStarted: false,
+  showMiniPlayer: false,
+  setShowMiniPlayer: noop,
+};
+
+export const MusicContext = createContext(EMPTY_MUSIC_CONTEXT);
 
 export const MusicProvider = ({ children }) => {
   const { musicSettings, updateMusicSettings } = useContext(SettingsContext);
-  const { user } = useContext(AuthContext);
+  const { user, loading: authLoading } = useContext(AuthContext);
+  const [restoredMusic] = useState(readSavedMusic);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [volume, setVolume] = useState(musicSettings.volume);
-  const [current, setCurrent] = useState(null);
-  const [progress, setProgress] = useState(0);
-  const [shuffle, setShuffle] = useState(false);
-  const [repeat, setRepeat] = useState("none");
-  const [isMuted, setIsMuted] = useState(false);
-  const [likedSongs, setLikedSongs] = useState([]);
-  const [history, setHistory] = useState([]);
+  const [volumeOverride, setVolumeOverride] = useState(
+    restoredMusic?.volume === undefined ? null : Number(restoredMusic.volume),
+  );
+  const volume = volumeOverride ?? (Number(musicSettings.volume) || 0);
+  const [progress, setProgress] = useState(restoredMusic?.progress ?? 0);
+  const [duration, setDuration] = useState(restoredMusic?.duration ?? 0);
+  const [shuffle, setShuffle] = useState(restoredMusic?.shuffle ?? false);
+  const [repeat, setRepeat] = useState(restoredMusic?.repeat || "none");
+  const [isMuted, setIsMuted] = useState(restoredMusic?.isMuted ?? false);
+  const [likedSongs, setLikedSongs] = useState(restoredMusic?.likedSongs || []);
+  const [history, setHistory] = useState(restoredMusic?.history || []);
+  const [currentTime, setCurrentTime] = useState(restoredMusic?.currentTime ?? 0);
+  const [showMiniPlayer, setShowMiniPlayer] = useState(
+    restoredMusic?.showMiniPlayer ?? false,
+  );
+  const [hasStarted, setHasStarted] = useState(restoredMusic?.hasStarted ?? false);
+  const pendingSeekRef = useRef(restoredMusic?.currentTime ?? 0);
+  const activeTrackRef = useRef(restoredMusic?.track || null);
 
-  // Sync volume with SettingsContext (debounced via SettingsContext's own sync)
-  useEffect(() => {
-    if (volume !== musicSettings.volume) {
-      updateMusicSettings({ volume });
-    }
-  }, [volume]);
-
-  // Restore settings on load
-  useEffect(() => {
-    if (musicSettings.volume !== undefined) {
-      setVolume(musicSettings.volume);
-    }
-  }, [musicSettings.volume]);
-
-  const [currentTime, setCurrentTime] = useState(0);
-  const [hasStarted, setHasStarted] = useState(false);
-  const [showMiniPlayer, setShowMiniPlayer] = useState(false);
+  const changeVolume = useCallback(
+    (value) => {
+      const nextVolume = Math.min(100, Math.max(0, Number(value) || 0));
+      setVolumeOverride(nextVolume);
+      if (nextVolume !== Number(musicSettings.volume)) {
+        updateMusicSettings({ volume: nextVolume });
+      }
+    },
+    [musicSettings.volume, updateMusicSettings],
+  );
 
   const audioRef = useRef(null);
-
-  useEffect(() => {
-    if (user) return;
-
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-    }
-    setIsPlaying(false);
-    setCurrent(null);
-    setProgress(0);
-    setCurrentTime(0);
-    setHasStarted(false);
-    setShowMiniPlayer(false);
-  }, [user]);
 
   const staticTracks = [
     {
@@ -196,7 +238,87 @@ export const MusicProvider = ({ children }) => {
     },
   ];
 
-  const [tracks, setTracks] = useState(staticTracks);
+  const [tracks, setTracks] = useState(() => {
+    const savedTrack = restoredMusic?.track;
+    if (
+      savedTrack?.url &&
+      !staticTracks.some((track) => track.id === savedTrack.id)
+    ) {
+      return [...staticTracks, savedTrack];
+    }
+    return staticTracks;
+  });
+  const [current, setCurrent] = useState(() => {
+    const savedTrackId = restoredMusic?.track?.id;
+    if (savedTrackId === undefined) return null;
+    const savedTrackIndex = tracks.findIndex((track) => track.id === savedTrackId);
+    return savedTrackIndex >= 0 ? savedTrackIndex : null;
+  });
+
+  useEffect(() => {
+    if (authLoading || user) return;
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+    setIsPlaying(false);
+  }, [authLoading, user]);
+
+  const selectTrack = useCallback((index, autoplay = true) => {
+    const track = tracks[index];
+    if (!track) return;
+    activeTrackRef.current = track;
+    pendingSeekRef.current = 0;
+    setCurrent(index);
+    setCurrentTime(0);
+    setProgress(0);
+    setDuration(getTrackDuration(track));
+    setHasStarted(true);
+    setShowMiniPlayer(true);
+    setIsPlaying(autoplay);
+  }, [tracks]);
+
+  useEffect(() => {
+    if (current === null || !tracks[current]) return;
+    activeTrackRef.current = tracks[current];
+  }, [current, tracks]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        MUSIC_STORAGE_KEY,
+        JSON.stringify({
+          isPlaying,
+          volume,
+          progress,
+          duration,
+          currentTime,
+          shuffle,
+          repeat,
+          isMuted,
+          likedSongs,
+          history,
+          showMiniPlayer,
+          hasStarted,
+          track: activeTrackRef.current,
+        }),
+      );
+    } catch (error) {
+      console.error("Unable to save music state:", error);
+    }
+  }, [
+    isPlaying,
+    volume,
+    progress,
+    duration,
+    currentTime,
+    shuffle,
+    repeat,
+    isMuted,
+    likedSongs,
+    history,
+    showMiniPlayer,
+    hasStarted,
+  ]);
 
   useEffect(() => {
     const fetchJamendoAPI = async () => {
@@ -221,96 +343,134 @@ export const MusicProvider = ({ children }) => {
           "ass",
           "vulgar",
         ];
-        let allApiTracks = [];
-
-        for (const query of queries) {
-          try {
+        const requests = await Promise.allSettled(
+          queries.map(async (query) => {
+            const params = new URLSearchParams({
+              client_id: jamendoClientId,
+              format: "json",
+              limit: String(query.limit),
+              tags: query.tag,
+              audioformat: "mp32",
+              include: "musicinfo",
+            });
             const response = await fetch(
-              `https://api.jamendo.com/v3.0/tracks/?client_id=${jamendoClientId}&format=json&limit=${query.limit}&tags=${query.tag}&audioformat=mp32&include=musicinfo`,
+              `https://api.jamendo.com/v3.0/tracks/?${params}`,
+              { signal: AbortSignal.timeout(12000) },
             );
-            const data = await response.json();
-
-            if (data.results) {
-              const mapped = data.results
-                .filter((track) => {
-                  const title = (track.name || "").toLowerCase();
-                  const artist = (track.artist_name || "").toLowerCase();
-                  return !bannedWords.some(
-                    (word) => title.includes(word) || artist.includes(word),
-                  );
-                })
-                .map((track) => {
-                  const minutes = Math.floor(track.duration / 60);
-                  const seconds = track.duration % 60;
-                  return {
-                    id: track.id,
-                    title: track.name || "Unknown Track",
-                    artist: track.artist_name || "Jamendo Artist",
-                    duration: `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`,
-                    cover: "bi-music-note-list",
-                    url: track.audio,
-                    poster: track.image || track.album_image || null,
-                    category: query.category,
-                    language: query.tag === "hindi" ? "Hindi" : "English",
-                  };
-                });
-              allApiTracks = [...allApiTracks, ...mapped];
+            if (!response.ok) {
+              throw new Error(`Jamendo ${query.tag} request failed (${response.status}).`);
             }
-          } catch (e) {
-            console.error(`Failed to fetch ${query.tag}`, e);
-          }
+            const data = await response.json();
+            return (data.results || [])
+              .filter((track) => {
+                const title = (track.name || "").toLowerCase();
+                const artist = (track.artist_name || "").toLowerCase();
+                return (
+                  track.audio &&
+                  Number.isFinite(Number(track.duration)) &&
+                  Number(track.duration) > 0 &&
+                  !bannedWords.some(
+                    (word) => title.includes(word) || artist.includes(word),
+                  )
+                );
+              })
+              .map((track) => {
+                const minutes = Math.floor(track.duration / 60);
+                const seconds = track.duration % 60;
+                return {
+                  id: track.id,
+                  title: track.name || "Unknown Track",
+                  artist: track.artist_name || "Jamendo Artist",
+                  duration: `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`,
+                  cover: "bi-music-note-list",
+                  url: track.audio,
+                  poster: track.image || track.album_image || null,
+                  category: query.category,
+                  language: query.tag === "hindi" ? "Hindi" : "English",
+                };
+              });
+          }),
+        );
+        const apiTracks = requests.flatMap((result) => {
+          if (result.status === "fulfilled") return result.value;
+          console.warn("A Jamendo track category could not be loaded:", result.reason);
+          return [];
+        });
+        if (apiTracks.length > 0) {
+          setTracks((existingTracks) => {
+            const existingIds = new Set(existingTracks.map((track) => track.id));
+            return [
+              ...existingTracks,
+              ...apiTracks.filter((track) => !existingIds.has(track.id)),
+            ];
+          });
         }
-
-        if (allApiTracks.length > 0) {
-          setTracks(allApiTracks);
-          setCurrent(null);
-          setProgress(0);
-          setCurrentTime(0);
-          setHasStarted(false);
-          setIsPlaying(false);
-        }
-      } catch (err) {
-        console.error("Network error hitting Jamendo. Using fallback tracks.");
+      } catch (error) {
+        console.error("Unable to load Jamendo tracks; using the built-in playlist.", error);
       }
     };
 
     fetchJamendoAPI();
   }, []);
 
-  const nextTrack = () => {
+  const nextTrack = useCallback(() => {
+    if (tracks.length === 0) return;
     if (current === null) {
-      setCurrent(0);
-      setHasStarted(true);
-      setShowMiniPlayer(true);
+      selectTrack(0);
       return;
     }
-    setCurrent((c) => (c + 1) % tracks.length);
-    setProgress(0);
-    setCurrentTime(0);
-    setHasStarted(true);
-    setShowMiniPlayer(true);
-  };
+    if (shuffle && tracks.length > 1) {
+      const candidates = tracks.map((_, index) => index).filter((index) => index !== current);
+      selectTrack(candidates[Math.floor(Math.random() * candidates.length)]);
+      return;
+    }
+    if (current === tracks.length - 1 && repeat === "none") {
+      setIsPlaying(false);
+      return;
+    }
+    selectTrack((current + 1) % tracks.length);
+  }, [current, repeat, selectTrack, shuffle, tracks]);
 
-  const prevTrack = () => {
+  const prevTrack = useCallback(() => {
+    if (tracks.length === 0) return;
     if (current === null) {
-      setCurrent(0);
-      setHasStarted(true);
-      setShowMiniPlayer(true);
+      selectTrack(0);
       return;
     }
-    setCurrent((c) => (c - 1 + tracks.length) % tracks.length);
-    setProgress(0);
-    setCurrentTime(0);
-    setHasStarted(true);
-    setShowMiniPlayer(true);
-  };
+    if (currentTime > 3 && audioRef.current) {
+      audioRef.current.currentTime = 0;
+      setCurrentTime(0);
+      setProgress(0);
+      return;
+    }
+    selectTrack((current - 1 + tracks.length) % tracks.length);
+  }, [current, currentTime, selectTrack, tracks]);
+
+  const handleEnded = useCallback(() => {
+    if (repeat === "one" && audioRef.current) {
+      audioRef.current.currentTime = 0;
+      setCurrentTime(0);
+      setProgress(0);
+      audioRef.current.play().catch((error) => {
+        console.warn("Unable to replay the current track:", error);
+        setIsPlaying(false);
+      });
+      return;
+    }
+    nextTrack();
+  }, [nextTrack, repeat]);
 
   useEffect(() => {
     if (audioRef.current) {
       if (isPlaying) {
         audioRef.current
           .play()
-          .catch((e) => console.log("Audio play blocked by browser:", e));
+          .catch((error) => {
+            if (error.name !== "NotAllowedError") {
+              console.error("Music playback failed:", error);
+            }
+            setIsPlaying(false);
+          });
       } else {
         audioRef.current.pause();
       }
@@ -332,8 +492,25 @@ export const MusicProvider = ({ children }) => {
     }
   };
 
+  const seekTo = useCallback((time) => {
+    const audio = audioRef.current;
+    const mediaDuration =
+      Number.isFinite(audio?.duration) && audio.duration > 0
+        ? audio.duration
+        : duration || getTrackDuration(tracks[current]);
+    if (!Number.isFinite(mediaDuration) || mediaDuration <= 0) return;
+    const nextTime = Math.min(mediaDuration, Math.max(0, Number(time) || 0));
+    if (audio && audio.readyState >= 1 && Number.isFinite(audio.duration)) {
+      audio.currentTime = nextTime;
+    }
+    pendingSeekRef.current = nextTime;
+    setCurrentTime(nextTime);
+    setProgress((nextTime / mediaDuration) * 100);
+  }, [current, duration, tracks]);
+
   const togglePlay = () => {
     if (current === null) {
+      activeTrackRef.current = tracks[0] || null;
       setCurrent(0);
       setHasStarted(true);
     }
@@ -342,10 +519,8 @@ export const MusicProvider = ({ children }) => {
   };
 
   const playTrack = (index) => {
-    setCurrent(index);
-    setIsPlaying(true);
-    setHasStarted(true);
-    setShowMiniPlayer(true);
+    if (!tracks[index]) return;
+    selectTrack(index);
 
     // Add to history
     const track = tracks[index];
@@ -372,12 +547,16 @@ export const MusicProvider = ({ children }) => {
         isPlaying,
         setIsPlaying,
         volume,
-        setVolume,
+        setVolume: changeVolume,
+        changeVolume,
         current,
         setCurrent,
         progress,
         setProgress,
         currentTime,
+        duration,
+        seekTo,
+        seekBy: (seconds) => seekTo(currentTime + seconds),
         shuffle,
         setShuffle,
         repeat,
@@ -401,8 +580,28 @@ export const MusicProvider = ({ children }) => {
         <audio
           ref={audioRef}
           src={tracks[current].url}
+          onLoadedMetadata={() => {
+            if (audioRef.current) {
+              const loadedDuration = audioRef.current.duration;
+              const resolvedDuration = Number.isFinite(loadedDuration)
+                ? loadedDuration
+                : getTrackDuration(tracks[current]);
+              setDuration(resolvedDuration);
+              if (pendingSeekRef.current > 0) {
+                audioRef.current.currentTime = Math.min(
+                  pendingSeekRef.current,
+                  resolvedDuration || pendingSeekRef.current,
+                );
+              }
+              pendingSeekRef.current = 0;
+            }
+          }}
           onTimeUpdate={handleTimeUpdate}
-          onEnded={nextTrack}
+          onEnded={handleEnded}
+          onError={(event) => {
+            console.error("The selected music track could not be played.", event.currentTarget.error);
+            setIsPlaying(false);
+          }}
         />
       )}
       {children}

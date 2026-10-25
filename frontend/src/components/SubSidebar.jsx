@@ -6,12 +6,17 @@ import { useTimer } from "../context/TimerContext";
 import "./SubSidebar.css";
 import ConfirmationModal from "./ConfirmationModal";
 import { toast } from "react-hot-toast";
+import { usePersistentBoolean } from "../hooks/usePersistentBoolean";
 
 const SubSidebar = () => {
   const planner = usePlanner();
   const { notifications, removeNotification, clearNotifications } = useNotifications();
   const { seconds, isActive, toggleTimer, mode, formatTime, resetTimer, sessions } = useTimer();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isCollapsed, setIsCollapsed] = usePersistentBoolean(
+    "gyaanmitra.sidebar.planner.collapsed",
+    false,
+  );
 
   // Safely extract planner data
   const subjects = planner?.subjects || [];
@@ -102,7 +107,18 @@ const SubSidebar = () => {
   };
 
   return (
-    <aside className="sub-sidebar">
+    <aside className={`sub-sidebar collapsible-sub-sidebar ${isCollapsed ? "is-collapsed" : ""}`}>
+      <button
+        type="button"
+        className="sub-sidebar-toggle"
+        onClick={() => setIsCollapsed((collapsed) => !collapsed)}
+        aria-label={isCollapsed ? "Expand planner sidebar" : "Collapse planner sidebar"}
+        aria-expanded={!isCollapsed}
+        title={isCollapsed ? "Expand planner sidebar" : "Collapse planner sidebar"}
+      >
+        <i className={`bi ${isCollapsed ? "bi-chevron-right" : "bi-chevron-left"}`} />
+      </button>
+      <span className="sub-sidebar-collapsed-label" aria-hidden="true">PLANNER</span>
       <div className="sub-sidebar-header">
         <h3 className="sub-sidebar-title">
           <i className="bi bi-diagram-3"></i> Planner Subsidebar

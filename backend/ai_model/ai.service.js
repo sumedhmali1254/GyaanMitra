@@ -1,11 +1,12 @@
+const { getLmStudioBaseUrl, resolveLmStudioChatModel } = require("./lmStudio");
+
 const generateAiContent = async (prompt, options = {}) => {
     const { json = false, temperature = 0.7 } = options;
 
-    const rawURL = process.env.LM_STUDIO_URL || "http://127.0.0.1:1254";
-    // Strip trailing /v1 if present — we add it ourselves
-    const baseURL = rawURL.replace(/\/v1\/?$/, "");
+    const baseURL = getLmStudioBaseUrl();
 
     try {
+        const { model } = await resolveLmStudioChatModel();
         console.log(`[AI Service] Sending request to LM Studio at ${baseURL}/v1`);
 
         const messages = [];
@@ -24,7 +25,7 @@ const generateAiContent = async (prompt, options = {}) => {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: "qwen",
+                model,
                 messages: messages,
                 temperature: temperature,
                 stream: false
@@ -55,7 +56,7 @@ const generateAiContent = async (prompt, options = {}) => {
         return {
             text,
             provider: "LM Studio",
-            modelId: data.model || "qwen",
+            modelId: data.model || model,
         };
     } catch (err) {
         console.error(`[AI Service] Error with LM Studio:`, err.message);

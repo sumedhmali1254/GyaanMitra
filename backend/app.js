@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
-require("dotenv").config();
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const aiRoutes = require("./ai_model/ai.routes");
 const authRoutes = require("./routes/authRoutes");
@@ -13,26 +14,17 @@ const { errorHandler } = require("./middleware/errorMiddleware");
 
 const app = express();
 
-// app.use(
-//   cors({
-//     origin: (origin, callback) => {
-//       const allowedOrigins = process.env.FRONTEND_URL
-//         ? process.env.FRONTEND_URL.split(",").map((o) => o.trim())
-//         : ["http://localhost:5173", "http://localhost:5174"];
-//       if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-//         callback(null, true);
-//       } else {
-//         callback(new Error("Not allowed by CORS"));
-//       }
-//     },
-//     credentials: true,
-//   }),
-// );
+const allowedOrigins = (process.env.FRONTEND_URL ||
+  "http://localhost:5173,http://localhost:5174")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
-// [DEPLOYMENT UPDATE]: Read the deployed Vercel origin from FRONTEND_URL.
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "*",
+    origin: (origin, callback) => {
+      callback(null, !origin || allowedOrigins.includes(origin));
+    },
     credentials: true,
   }),
 );
@@ -56,7 +48,7 @@ app.use("/api/sessions", require("./routes/sessionRoutes"));
 app.use("/api/chatsessions", chatSessionRoutes);
 app.use("/api/planner", require("./routes/plannerRoutes"));
 app.use("/api", aiRoutes);
-app.use("/uploads", express.static("uploads"));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.use(errorHandler);
 

@@ -1,5 +1,7 @@
 const pdfParse = require("pdf-parse");
 const OpenAI = require("openai");
+const { getLmStudioBaseUrl, resolveLmStudioChatModel } = require("../ai_model/lmStudio");
+const { parseSyllabusResponse } = require("../utils/parseSyllabusResponse");
 
 exports.extractSyllabus = async (req, res) => {
   try {
@@ -42,10 +44,8 @@ exports.extractSyllabus = async (req, res) => {
 
     // 2. Setup LM Studio Client
     // Ensure the base URL always ends with /v1 for OpenAI compatibility
-    let lmStudioBase = process.env.LM_STUDIO_URL || "http://127.0.0.1:1283";
-    if (!lmStudioBase.endsWith("/v1")) {
-      lmStudioBase = lmStudioBase.replace(/\/+$/, "") + "/v1";
-    }
+    const lmStudioBase = `${getLmStudioBaseUrl()}/v1`;
+    const { model } = await resolveLmStudioChatModel();
 
     const openai = new OpenAI({
       baseURL: lmStudioBase,
@@ -55,7 +55,7 @@ exports.extractSyllabus = async (req, res) => {
     // We take the first 12,000 characters to prevent overflowing local LM studio context limits
     const textSnippet = pdfText.substring(0, 12000);
 
-    const prompt = `You are a strict Syllabus Extractor AI.
+    const prompt = `You are a strict Syllabus Extractor AI. Return JSON only: do not use Markdown code fences, explanations, or text before or after the JSON object.
 Read the following academic syllabus text and extract:
 1. The overall Subject / Course Title
 2. All Chapters (or Modules/Units) with their number and name
@@ -86,54 +86,32 @@ ${textSnippet}
 
     // 3. Ask LM Studio to process the PDF
     const completion = await openai.chat.completions.create({
-      model: "qwen2.5-coder-7b-instruct", // This model name doesn't matter much for LM Studio, it uses whatever is loaded
-      messages: [{ role: "user", content: prompt }],
+      model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Return exactly one valid JSON object and nothing else. Do not use Markdown or code fences.",
+        },
+        { role: "user", content: prompt },
+      ],
       temperature: 0.1, // Keep it low for strict, deterministic JSON formatting
     });
 
-    let rawOutput = completion.choices[0].message.content.trim();
+    const rawOutput = completion.choices[0]?.message?.content;
 
-    // Clean up any potential markdown wrapper if the model hallucinates it
-    // Remove ```json ... ``` or ``` ... ``` wrappers
-    rawOutput = rawOutput
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim();
-
-    // Try to find JSON object in the output if there's extra text around it
-    const jsonMatch = rawOutput.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      rawOutput = jsonMatch[0];
-    }
-
-    // 4. Parse the LLM's intelligent extraction
+    // 4. Parse and validate the model response before returning it to the frontend.
     let extractedData;
     try {
-      extractedData = JSON.parse(rawOutput);
+      extractedData = parseSyllabusResponse(rawOutput);
     } catch (parseError) {
-      console.error(
-        "[LM Studio] Failed to parse JSON output:",
-        rawOutput.substring(0, 500),
-      );
+      console.error("[LM Studio] Invalid syllabus response:", parseError.message);
       return res.status(500).json({
         success: false,
-        message:
-          "LM Studio returned invalid JSON. Please try again or use a different model.",
+        message: parseError.message,
         error: parseError.message,
       });
     }
-
-    // Fallback guarantees just in case the JSON lacks these fields
-    if (!extractedData.courseTitle)
-      extractedData.courseTitle = "Extracted Course";
-    if (!extractedData.chapters) extractedData.chapters = [];
-
-    // Map IDs to guarantee proper indexing for the frontend Flashcards Engine
-    extractedData.chapters = extractedData.chapters.map((ch, idx) => ({
-      id: idx + 1,
-      name: ch.name || `Chapter ${idx + 1}`,
-      topics: ch.topics || "General Concepts",
-    }));
 
     console.log(
       `[LM Studio Extractor] Successfully parsed "${extractedData.courseTitle}" with ${extractedData.chapters.length} chapters.`,

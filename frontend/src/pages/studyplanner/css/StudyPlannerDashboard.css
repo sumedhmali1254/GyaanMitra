@@ -363,6 +363,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  text-decoration: none !important;
 }
 
 .sp-day-name {
@@ -627,6 +628,7 @@
 }
 
 .sp-modal-foot {
+  margin-top: 1rem;
   padding: 0.875rem 1.5rem;
   border-top: 1px solid var(--sp-border);
   display: flex;
@@ -683,6 +685,19 @@
   outline: none;
   border-color: var(--sp-primary);
   box-shadow: 0 0 0 2px rgba(121, 85, 72, 0.08);
+}
+
+.sp-hours-input {
+  height: 42px;
+  padding-right: 8px;
+  background-color: #f8fafc;
+  color: #1e293b;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: text;
+  caret-color: var(--sp-primary);
+  font-variant-numeric: tabular-nums;
 }
 
 select.sp-input {
@@ -872,6 +887,21 @@ input[type=number] {
   appearance: textfield;
 }
 
+.sp-input.sp-number-stepper[type="number"] {
+  -moz-appearance: number-input;
+  appearance: auto;
+  padding-right: 0.35rem;
+}
+
+.sp-input.sp-number-stepper[type="number"]::-webkit-inner-spin-button,
+.sp-input.sp-number-stepper[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: inner-spin-button;
+  appearance: auto;
+  opacity: 1;
+  margin: 0;
+  height: 1.5rem;
+}
+
 /* Override Bootstrap Form Range to Brown */
 .form-range::-webkit-slider-thumb {
   background-color: var(--sp-primary) !important;
@@ -924,4 +954,3 @@ input[type=number] {
   font-size: 1rem;
   transition: none; /* Keep icon stable */
 }
-

@@ -40,7 +40,7 @@ const StudyPlannerDashboard = () => {
   };
 
   const [subjectDropdownOpen, setSubjectDropdownOpen] = useState(false);
-  const [subjectSourceTab, setSubjectSourceTab] = useState("pdf");
+  const [subjectSourceTab, setSubjectSourceTab] = useState("all");
   const [scheduleMode, setScheduleMode] = useState("average"); // 'average' or 'custom'
   const subjectDropdownRef = useRef(null);
 
@@ -59,6 +59,16 @@ const StudyPlannerDashboard = () => {
   const setAiRecommendations = planner?.setAiRecommendations || (() => { });
   const showAIAdvisorModal = planner?.showAIAdvisorModal;
   const setShowAIAdvisorModal = planner?.setShowAIAdvisorModal || (() => { });
+  const filteredSyllabus = syllabusData.filter((syllabus) => {
+    const matchesSource = subjectSourceTab === "all" || syllabus.source === subjectSourceTab;
+    return matchesSource;
+  });
+  const isSyllabusAlreadyAdded = (syllabus) =>
+    subjects.some(
+      (plannerSubject) =>
+        plannerSubject.subject?.trim().toLocaleLowerCase() ===
+        syllabus.courseTitle?.trim().toLocaleLowerCase(),
+    );
 
   // Form state (local to modal)
   const [beginnerMode, setBeginnerMode] = useState(false);
@@ -91,6 +101,7 @@ const StudyPlannerDashboard = () => {
   const [priority, setPriority] = useState("normal");
   const [showAddModal, setShowAddModal] = useState(false);
   const [showSubjectsModal, setShowSubjectsModal] = useState(false);
+  const [showRegeneratePlanModal, setShowRegeneratePlanModal] = useState(false);
   const [aiLabelFlags, setAiLabelFlags] = useState(false);
 
   // Track subject backups for UNDO functionality
@@ -101,25 +112,45 @@ const StudyPlannerDashboard = () => {
   // Handlers for Smart Time Sync (Uses DayJS for reliability)
   const handleStartTimeChange = (newStart) => {
     setStartTime(newStart);
+    const hours = Number(availableHours) > 0 ? Number(availableHours) : 1;
     // Be robust with parsing to handle AM/PM correctly
     const s = dayjs(newStart, ["hh:mm A", "HH:mm", "h:mm A", "H:mm"]);
-    const e = s.isValid() ? s.add(availableHours, "hour") : s;
+    const e = s.isValid() ? s.add(hours, "hour") : s;
     setEndTime(e.format("hh:mm A"));
   };
 
   const handleEndTimeChange = (newEnd) => {
     setEndTime(newEnd);
+    const hours = Number(availableHours) > 0 ? Number(availableHours) : 1;
     const e = dayjs(newEnd, "hh:mm A");
-    const s = e.subtract(availableHours, "hour");
+    const s = e.subtract(hours, "hour");
     setStartTime(s.format("hh:mm A"));
   };
 
   const handleAvailableHoursChange = (newHrsValue) => {
-    const newHrs = parseFloat(newHrsValue) || 1;
-    setAvailableHours(newHrs);
+    if (!/^\d*\.?\d*$/.test(newHrsValue)) return;
+    setAvailableHours(newHrsValue);
+
+    const hours = Number(newHrsValue);
+    if (!Number.isFinite(hours) || hours < 0.5 || hours > 24) return;
+
     const s = dayjs(startTime, "hh:mm A");
-    const e = s.add(newHrs, "hour");
-    setEndTime(e.format("hh:mm A"));
+    if (s.isValid()) {
+      setEndTime(s.add(hours, "hour").format("hh:mm A"));
+    }
+  };
+
+  const handleAvailableHoursBlur = () => {
+    const parsed = Number(availableHours);
+    const hours = Number.isFinite(parsed) && parsed > 0
+      ? Math.min(Math.max(parsed, 0.5), 24)
+      : 1;
+    setAvailableHours(hours);
+
+    const s = dayjs(startTime, "hh:mm A");
+    if (s.isValid()) {
+      setEndTime(s.add(hours, "hour").format("hh:mm A"));
+    }
   };
 
   // Outcome-Focused Stats
@@ -285,7 +316,7 @@ const StudyPlannerDashboard = () => {
       toast.error("Exam date is required");
       return false;
     }
-    if (chapters < 1) {
+    if (!Number.isFinite(Number(chapters)) || Number(chapters) < 1) {
       toast.error("Must have at least 1 chapter");
       return false;
     }
@@ -338,7 +369,7 @@ const StudyPlannerDashboard = () => {
         errStr.includes("ERR_CONNECTION")
       ) {
         toast.error(
-          "ML API server not running! Start: cd ai-model/studyplanner && python app.py",
+          "ML API is unavailable. In a second terminal, run: cd ml-model\\studyplanner; .\\.venv\\Scripts\\Activate.ps1; python run.py",
           { duration: 6000 },
         );
       } else {
@@ -356,8 +387,8 @@ const StudyPlannerDashboard = () => {
     const subjectData = {
       subject,
       examDate,
-      chapters,
-      avg_chapter_time: avgChapterTime,
+      chapters: Number(chapters),
+      avg_chapter_time: Number(avgChapterTime),
       priority,
       beginnerMode,
       scheduleMode,
@@ -458,19 +489,38 @@ const StudyPlannerDashboard = () => {
     setAiRecommendations([]);
     try {
       const parseAmPmHour = (timeStr) => {
-        if (!timeStr) return 0;
+        if (!timeStr) throw new Error("Every subject needs a study start and end time.");
         const t = dayjs(timeStr, ["hh:mm A", "h:mm A", "HH:mm", "H:mm"]);
-        return t.isValid() ? t.hour() : 0;
+        if (!t.isValid()) {
+          throw new Error(`Invalid study time "${timeStr}". Please check the AM/PM time.`);
+        }
+        return t.hour() + t.minute() / 60;
       };
+
+      const subjectTimes = subjectsToUse.flatMap((subject) => {
+        const times = [
+          subject.startTime || startTime || "06:00 AM",
+          subject.endTime || endTime || "10:00 PM",
+        ];
+        if (subject.scheduleMode === "custom" && subject.weeklyAvailability) {
+          Object.values(subject.weeklyAvailability).forEach((availability) => {
+            if (availability?.enabled !== false) {
+              if (availability?.start) times.push(availability.start);
+              if (availability?.end) times.push(availability.end);
+            }
+          });
+        }
+        return times;
+      });
 
       // Calculate the actual study window width
       const minStartHour = Math.min(
         parseAmPmHour(startTime),
-        ...subjectsToUse.map((s) => parseAmPmHour(s.startTime || startTime || "06:00 AM")),
+        ...subjectTimes.map(parseAmPmHour),
       );
       const maxEndHour = Math.max(
         parseAmPmHour(endTime),
-        ...subjectsToUse.map((s) => parseAmPmHour(s.endTime || endTime || "10:00 PM")),
+        ...subjectTimes.map(parseAmPmHour),
       );
       const windowWidth = maxEndHour - minStartHour;
 
@@ -479,29 +529,10 @@ const StudyPlannerDashboard = () => {
       // per-day window, so sending the full width is safe and prevents starvation.
       const maxAvailableHours = Math.max(availableHours, windowWidth, 4);
 
-      // If any subject has custom weekly availability, use the first one found as global fallback
-      let customWeeklyAvail =
-        subjectsToUse.find(
-          (s) => s.scheduleMode === "custom" && s.weeklyAvailability,
-        )?.weeklyAvailability || weeklyAvailability;
-
-      // Ensure that if we fall back to defaults, they reflect the current UI startTime/endTime
-      const resolvedWeeklyAvail = { ...customWeeklyAvail };
-      if (!subjectsToUse.some(s => s.scheduleMode === "custom")) {
-        // We are in 'average' mode for all subjects, apply global window to all enabled days
-        Object.keys(resolvedWeeklyAvail).forEach(day => {
-          if (resolvedWeeklyAvail[day].enabled) {
-            resolvedWeeklyAvail[day].start = startTime;
-            resolvedWeeklyAvail[day].end = endTime;
-          }
-        });
-      }
-
       const plan = await generateStudyPlan({
         availableHoursPerDay: maxAvailableHours,
         startHour: minStartHour,
         endHour: maxEndHour,
-        weeklyAvailability: resolvedWeeklyAvail,
         subjects: subjectsToUse.map((s) => ({
           subject: s.subject,
           examDate: s.examDate,
@@ -509,6 +540,19 @@ const StudyPlannerDashboard = () => {
           avg_chapter_time: s.avg_chapter_time,
           startTime: s.startTime || startTime || "06:00 AM",
           endTime: s.endTime || endTime || "10:00 PM",
+          weeklyAvailability:
+            s.scheduleMode === "custom" && s.weeklyAvailability
+              ? s.weeklyAvailability
+              : Object.fromEntries(
+                  Object.entries(weeklyAvailability || {}).map(([day, config]) => [
+                    day,
+                    {
+                      ...config,
+                      start: s.startTime || startTime || "06:00 AM",
+                      end: s.endTime || endTime || "10:00 PM",
+                    },
+                  ]),
+                ),
           beginnerMode: s.beginnerMode,
           ...(s.beginnerMode
             ? {
@@ -704,8 +748,26 @@ const StudyPlannerDashboard = () => {
     toast.success("Study plan cleared", { icon: "🧹" });
   };
 
+  const handleGeneratePlanClick = () => {
+    if (sessions.length > 0) {
+      setShowRegeneratePlanModal(true);
+      return;
+    }
+    void handleGeneratePlan();
+  };
+
   return (
     <div className="study-planner-dashboard">
+      <ConfirmationModal
+        show={showRegeneratePlanModal}
+        onClose={() => setShowRegeneratePlanModal(false)}
+        onConfirm={() => void handleGeneratePlan()}
+        title="Replace existing study plan?"
+        message="Generating a new plan will replace your current timetable. Do you want to continue?"
+        confirmText="Replace Plan"
+        cancelText="Keep Current Plan"
+        type="warning"
+      />
       {/* HEADER */}
       <div className="sp-header">
         <div className="sp-header-left">
@@ -724,7 +786,7 @@ const StudyPlannerDashboard = () => {
           </button>
           <button
             className="sp-btn sp-btn-primary"
-            onClick={handleGeneratePlan}
+            onClick={handleGeneratePlanClick}
             disabled={planLoading || subjects.length === 0}
           >
             <i
@@ -734,66 +796,6 @@ const StudyPlannerDashboard = () => {
           </button>
         </div>
       </div>
-
-      {/* AI ADVISOR ALERTS Section */}
-      {aiRecommendations.length > 0 && (
-        <div
-          className="sp-advisor-alerts px-4 mb-4"
-          style={{
-            display: "flex",
-            gap: "16px",
-            overflowX: "auto",
-            paddingBottom: "10px",
-            scrollbarWidth: "none"
-          }}
-        >
-          {aiRecommendations.map((rec, idx) => {
-            const isWarning = rec.shortageHours > 0;
-            return (
-              <div
-                key={idx}
-                className="sp-advisor-card p-3"
-                style={{
-                  minWidth: "320px",
-                  maxWidth: "320px",
-                  background: isWarning ? "#fff5f5" : "#f0fdf4",
-                  borderLeft: `4px solid ${isWarning ? "#ef4444" : "#10b981"}`,
-                  borderRadius: "12px",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-                  flexShrink: 0
-                }}
-              >
-                <div className="d-flex align-items-center gap-2 mb-2">
-                  <i className={`bi ${isWarning ? "bi-exclamation-triangle" : "bi-check-circle"} ${isWarning ? "text-danger" : "text-success"}`}></i>
-                  <span className="fw-bold small">{rec.subjectName}</span>
-                  <span className="badge ms-auto" style={{
-                    fontSize: '0.6rem',
-                    background: isWarning ? '#fee2e2' : '#dcfce7',
-                    color: isWarning ? '#ef4444' : '#10b981'
-                  }}>
-                    {rec.priority.toUpperCase()}
-                  </span>
-                </div>
-                <p className="extra-small text-muted mb-2 text-truncate-2" style={{ fontSize: '0.75rem', lineHeight: '1.4' }}>
-                  {rec.message}
-                </p>
-                <div className="d-flex justify-content-between align-items-center">
-                  <span className="fw-bold text-primary" style={{ fontSize: '0.75rem' }}>
-                    {rec.hoursNeeded}h needed
-                  </span>
-                  <button
-                    className="btn btn-sm btn-link p-0 text-decoration-none fw-bold"
-                    style={{ fontSize: '0.75rem' }}
-                    onClick={() => setShowAIAdvisorModal(true)}
-                  >
-                    Details
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
 
       {/* TOOLBAR */}
       <div className="sp-toolbar">
@@ -1947,7 +1949,7 @@ const StudyPlannerDashboard = () => {
                           borderRadius: "14px",
                         }}
                       >
-                        {["pdf", "manual"].map((tab) => (
+                        {["all", "pdf", "manual"].map((tab) => (
                           <button
                             key={tab}
                             onClick={() => setSubjectSourceTab(tab)}
@@ -1967,20 +1969,19 @@ const StudyPlannerDashboard = () => {
                                 subjectSourceTab === tab ? "white" : "#64748b",
                             }}
                           >
-                            {tab.toUpperCase()}
+                            {tab === "all" ? "ALL" : tab.toUpperCase()}
                           </button>
                         ))}
                       </div>
                       <div style={{ maxHeight: "220px", overflowY: "auto" }}>
-                        {syllabusData.filter(
-                          (s) => s.source === subjectSourceTab,
-                        ).length > 0 ? (
-                          syllabusData
-                            .filter((s) => s.source === subjectSourceTab)
-                            .map((s, i) => (
+                        {filteredSyllabus.length > 0 ? (
+                          filteredSyllabus.map((s, i) => {
+                            const alreadyAdded = isSyllabusAlreadyAdded(s);
+                            return (
                               <div
                                 key={i}
                                 onClick={() => {
+                                  if (alreadyAdded) return;
                                   setSubject(s.courseTitle);
                                   if (s.chapters)
                                     setChapters(s.chapters.length);
@@ -1989,16 +1990,24 @@ const StudyPlannerDashboard = () => {
                                 style={{
                                   padding: "12px 16px",
                                   borderRadius: "12px",
-                                  cursor: "pointer",
+                                  cursor: alreadyAdded ? "not-allowed" : "pointer",
                                   marginBottom: "8px",
-                                  border: "1px solid transparent",
+                                  border: alreadyAdded
+                                    ? "1px solid rgba(121, 85, 72, 0.14)"
+                                    : "1px solid transparent",
                                   transition: "0.2s",
+                                  opacity: alreadyAdded ? 0.58 : 1,
+                                  background: alreadyAdded ? "#f8fafc" : "transparent",
                                 }}
+                                aria-disabled={alreadyAdded}
+                                title={alreadyAdded ? "Already added to your Study Planner" : "Select subject"}
                                 onMouseEnter={(e) => {
+                                  if (alreadyAdded) return;
                                   e.currentTarget.style.background = "#f8fafc";
                                   e.currentTarget.style.borderColor = "#eef2ff";
                                 }}
                                 onMouseLeave={(e) => {
+                                  if (alreadyAdded) return;
                                   e.currentTarget.style.background =
                                     "transparent";
                                   e.currentTarget.style.borderColor =
@@ -2015,6 +2024,9 @@ const StudyPlannerDashboard = () => {
                                   {s.courseTitle}
                                 </div>
                                 <div
+                                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+                                >
+                                  <span
                                   style={{
                                     fontSize: "0.75rem",
                                     color: "#795548",
@@ -2022,9 +2034,17 @@ const StudyPlannerDashboard = () => {
                                   }}
                                 >
                                   {s.chapters?.length || 0} Chapters
+                                  </span>
+                                  {alreadyAdded && (
+                                    <span style={{ color: "#8d6e63", fontSize: "0.68rem", fontWeight: 700 }}>
+                                      <i className="bi bi-check-circle-fill me-1"></i>
+                                      Added
+                                    </span>
+                                  )}
                                 </div>
                               </div>
-                            ))
+                            );
+                          })
                         ) : (
                           <div
                             style={{
@@ -2082,21 +2102,39 @@ const StudyPlannerDashboard = () => {
                   <label className="sp-label">Total Chapters</label>
                   <input
                     type="number"
-                    className="sp-input"
+                    min="1"
+                    max="50"
+                    step="1"
+                    className="sp-input sp-number-stepper"
                     value={chapters}
-                    onChange={(e) => setChapters(parseInt(e.target.value) || 1)}
+                    onChange={(e) => {
+                      if (/^\d*$/.test(e.target.value)) {
+                        setChapters(e.target.value);
+                      }
+                    }}
+                    onBlur={() => {
+                      const parsed = Number.parseInt(chapters, 10);
+                      setChapters(
+                        Number.isFinite(parsed) && parsed > 0 ? parsed : 1,
+                      );
+                    }}
                   />
                 </div>
                 <div className="sp-field">
                   <label className="sp-label">Avg Time/Ch (hrs)</label>
                   <input
                     type="number"
-                    className="sp-input"
-                    step="0.5"
+                    className="sp-input sp-number-stepper"
+                    min="0.25"
+                    step="0.25"
                     value={avgChapterTime}
-                    onChange={(e) =>
-                      setAvgChapterTime(parseFloat(e.target.value) || 1.5)
-                    }
+                    onChange={(e) => setAvgChapterTime(e.target.value)}
+                    onBlur={() => {
+                      const parsed = Number.parseFloat(avgChapterTime);
+                      setAvgChapterTime(
+                        Number.isFinite(parsed) && parsed > 0 ? parsed : 0.25,
+                      );
+                    }}
                   />
                 </div>
               </div>
@@ -2238,22 +2276,15 @@ const StudyPlannerDashboard = () => {
                     <div style={{ width: "80px", flexShrink: 0 }}>
                       <div style={{ position: "relative" }}>
                         <input
-                          type="number"
-                          className="sp-input"
-                          style={{
-                            height: "42px",
-                            backgroundColor: "#f8fafc",
-                            border: "1px solid #e2e8f0",
-                            textAlign: "center",
-                            fontWeight: "700",
-                            fontSize: "0.9rem",
-                            paddingRight: "8px",
-                            color: "#1e293b",
-                          }}
+                          type="text"
+                          className="sp-input sp-hours-input"
+                          aria-label="Available study hours per day"
+                          inputMode="decimal"
                           value={availableHours}
                           onChange={(e) =>
                             handleAvailableHoursChange(e.target.value)
                           }
+                          onBlur={handleAvailableHoursBlur}
                         />
                         <div
                           style={{

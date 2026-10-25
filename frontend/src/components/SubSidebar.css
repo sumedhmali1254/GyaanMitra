@@ -1,6 +1,7 @@
 /* SUB SIDEBAR */
 .sub-sidebar {
   width: 400px;
+  min-width: 0;
   background: linear-gradient(180deg, var(--bg-secondary, #f8fafc) 0%, rgba(121, 85, 72, 0.05) 100%);
   border-right: 1px solid var(--border-color, #e2e8f0);
   display: flex;
@@ -9,7 +10,109 @@
   position: sticky;
   top: 0;
   flex-shrink: 0;
+  overflow: visible;
+  user-select: none;
+  cursor: default;
+}
+
+.sub-sidebar button,
+.sub-sidebar [role="button"],
+.sub-sidebar select {
+  cursor: pointer;
+}
+
+.sub-sidebar input,
+.sub-sidebar textarea {
+  cursor: text;
+  user-select: text;
+}
+
+.collapsible-sub-sidebar {
+  transition: width 220ms ease, min-width 220ms ease;
+}
+
+.sub-sidebar-toggle {
+  position: absolute;
+  top: 20px;
+  right: -14px;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--primary, #795548);
+  background: var(--bg-secondary, #fff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 50%;
+  box-shadow: 2px 2px 8px rgba(15, 23, 42, 0.1);
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background-color 150ms ease, color 150ms ease, transform 150ms ease;
+}
+
+.sub-sidebar-toggle:hover {
+  color: #fff;
+  background: var(--primary, #795548);
+  transform: scale(1.05);
+}
+
+.sub-sidebar-toggle:focus-visible {
+  outline: 2px solid var(--primary, #795548);
+  outline-offset: 2px;
+}
+
+.sub-sidebar-collapsed-label {
+  display: none;
+}
+
+.collapsible-sub-sidebar.is-collapsed {
+  width: 30px;
+  min-width: 30px;
+  background: linear-gradient(180deg, #f1f3f5 0%, #dfe3e7 52%, #cfd4da 100%);
+  border-right: 1px solid #c4c9cf;
+  box-shadow: inset -1px 0 rgba(71, 85, 105, 0.12);
+}
+
+.collapsible-sub-sidebar.is-collapsed .sub-sidebar-header,
+.collapsible-sub-sidebar.is-collapsed .sub-sidebar-content {
+  display: none !important;
+}
+
+.collapsible-sub-sidebar.is-collapsed .sub-sidebar-toggle {
+  top: 14px;
+  right: -14px;
+  width: 32px;
+  height: 32px;
+  color: #fff;
+  background: var(--primary, #795548);
+  border-color: var(--bg-secondary, #fff);
+  border-radius: 50%;
+  box-shadow: 0 2px 7px rgba(15, 23, 42, 0.24);
+}
+
+.collapsible-sub-sidebar.is-collapsed .sub-sidebar-toggle:hover {
+  background: var(--primary-dark, #5d4037);
+}
+
+.collapsible-sub-sidebar.is-collapsed .sub-sidebar-collapsed-label {
+  position: absolute;
+  inset: 0;
+  display: block;
   overflow: hidden;
+  color: var(--primary-dark, #5d4037);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.84rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  line-height: 1;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  white-space: pre;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
 }
 
 .sub-sidebar-header {

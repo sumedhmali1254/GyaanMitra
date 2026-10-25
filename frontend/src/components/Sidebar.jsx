@@ -3,7 +3,6 @@ import { NavLink } from "react-router-dom";
 import { AuthContext } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { useSettings } from "../context/SettingsContext";
-import { API_ORIGIN } from "../services/api";
 
 const Sidebar = ({ isOpen, isExpanded, onClose, onToggle }) => {
   const [isHovered, setIsHovered] = useState(false);
@@ -137,30 +136,7 @@ const Sidebar = ({ isOpen, isExpanded, onClose, onToggle }) => {
           >
             <div className="sidebar-user">
               <div className="sidebar-user-avatar">
-                {user?.avatar ? (
-                  <img
-                    // [DEPLOYMENT UPDATE]: Resolve uploaded avatars from the configured backend.
-                    src={
-                      user.avatar.startsWith("http")
-                        ? user.avatar
-                        : `${API_ORIGIN}${user.avatar}`
-                    }
-                    alt={user?.firstName || "User"}
-                    onError={(e) => {
-                      e.target.style.display = "none";
-                      e.target.parentElement.innerHTML = `<span>${user?.firstName?.charAt(0) || "U"}</span>`;
-                    }}
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "cover",
-                      borderRadius: "50%",
-                      display: "block",
-                    }}
-                  />
-                ) : (
-                  <span>{user?.firstName?.charAt(0) || "U"}</span>
-                )}
+                <i className="bi bi-person-fill" aria-hidden="true"></i>
               </div>
               <div className="sidebar-user-info">
                 <div className="sidebar-user-name">

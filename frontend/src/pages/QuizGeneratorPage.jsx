@@ -4,6 +4,7 @@ import { useSettings } from '../context/SettingsContext';
 import { AuthContext } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import api from "../services/api";
+import './QuizGeneratorPage.css';
 
 const QuizGeneratorPage = () => {
   const { syllabusData } = useSettings();
@@ -53,6 +54,9 @@ const QuizGeneratorPage = () => {
   const filteredSyllabus = syllabusData.filter(s => {
     if (sourceFilter === 'manual') {
       return !s.source || s.source === 'manual';
+    }
+    if (sourceFilter === 'all') {
+      return true;
     }
     return s.source === 'pdf';
   });
@@ -224,7 +228,7 @@ const QuizGeneratorPage = () => {
           const grouped = {};
           currentChapters.forEach(ch => {
             if (!grouped[ch.courseTitle]) grouped[ch.courseTitle] = [];
-            grouped[ch.courseTitle].push(`Ch ${ch.displayNum}`);
+            grouped[ch.courseTitle].push(`${ch.displayNum}. ${ch.name}`);
           });
           return Object.entries(grouped).map(([subj, chs]) => `${subj} - ${chs.join(', ')}`).join(' | ');
         })();
@@ -475,7 +479,6 @@ const QuizGeneratorPage = () => {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem 2rem', borderBottom: '1px solid rgba(0,0,0,0.05)', background: 'linear-gradient(135deg, rgba(121, 85, 72, 0.05) 0%, rgba(121, 85, 72, 0.02) 100%)', borderTopLeftRadius: '20px', borderTopRightRadius: '20px' }}>
               <div>
                 <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <i className="bi bi-clipboard-data-fill text-primary" style={{ fontSize: '1.4rem' }}></i> 
                   Results Analysis
                 </h2>
                 <div style={{ margin: '4px 0 0 2.15rem', color: '#64748b', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.02rem' }}>
@@ -593,19 +596,18 @@ const QuizGeneratorPage = () => {
                             if (opt === q.answer) {
                               optBg = 'rgba(34, 197, 94, 0.08)';
                               optBorder = '2px solid #22c55e';
-                              optIcon = (
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-                                  {opt === userAnswer && <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 700, background: '#22c55e', color: 'white' }}>You Chose</span>}
-                                  <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 700, background: '#dcfce7', color: '#16a34a' }}>
-                                    Correct <i className="bi bi-check-circle-fill ms-1"></i>
+                              if (isCorrect) {
+                                optIcon = (
+                                  <span style={{ position: 'absolute', top: '-13px', right: '16px', padding: '3px 9px', borderRadius: '6px', fontSize: '0.7rem', lineHeight: 1.2, fontWeight: 700, background: '#dcfce7', color: '#16a34a', boxShadow: '0 2px 5px rgba(22,163,74,0.12)' }}>
+                                    Correct
                                   </span>
-                                </div>
-                              );
+                                );
+                              }
                             } else if (opt === userAnswer && !isCorrect) {
                               optBg = 'rgba(239, 68, 68, 0.08)';
                               optBorder = '2px solid #ef4444';
                               optIcon = (
-                                <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 700, background: '#fef2f2', color: '#dc2626' }}>
+                                <span style={{ position: 'absolute', top: '-13px', right: '16px', padding: '3px 9px', borderRadius: '6px', fontSize: '0.7rem', lineHeight: 1.2, fontWeight: 700, background: '#fef2f2', color: '#dc2626', boxShadow: '0 2px 5px rgba(220,38,38,0.12)' }}>
                                   Your Answer <i className="bi bi-x-circle-fill ms-1"></i>
                                 </span>
                               );
@@ -614,9 +616,11 @@ const QuizGeneratorPage = () => {
                             return (
                               <div key={oIdx} className="col-md-6">
                                 <div style={{
-                                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                  padding: '0.75rem 1rem', borderRadius: 'var(--radius-lg, 10px)',
-                                  background: optBg, border: optBorder, minHeight: '48px'
+                                  display: 'flex', alignItems: 'center',
+                                  position: 'relative',
+                                  padding: '0.85rem 1rem', marginTop: optIcon ? '0.7rem' : 0,
+                                  borderRadius: 'var(--radius-lg, 10px)',
+                                  background: optBg, border: optBorder, minHeight: '52px'
                                 }}>
                                   <span style={{
                                     fontSize: '0.9rem', color: 'var(--text-primary)',
@@ -686,12 +690,15 @@ const QuizGeneratorPage = () => {
                   <i className="bi bi-gear me-2" style={{ color: 'var(--primary-light)' }}></i>
                   Configure Your Quiz
                 </h5>
-                <div className="btn-group" role="group">
-                  <input type="radio" className="btn-check" name="btnradiosource" id="source1" checked={sourceFilter === 'manual'} onChange={() => handleSourceChange('manual')} />
-                  <label className="btn btn-outline-primary btn-sm px-3" htmlFor="source1">Manual</label>
+                <div className="quiz-source-toggle" role="radiogroup" aria-label="Quiz syllabus source">
+                  <input type="radio" name="quiz-source" id="source1" checked={sourceFilter === 'manual'} onChange={() => handleSourceChange('manual')} />
+                  <label htmlFor="source1">Manual</label>
 
-                  <input type="radio" className="btn-check" name="btnradiosource" id="source2" checked={sourceFilter === 'pdf'} onChange={() => handleSourceChange('pdf')} />
-                  <label className="btn btn-outline-primary btn-sm px-3" htmlFor="source2">PDF</label>
+                  <input type="radio" name="quiz-source" id="source2" checked={sourceFilter === 'pdf'} onChange={() => handleSourceChange('pdf')} />
+                  <label htmlFor="source2">PDF</label>
+
+                  <input type="radio" name="quiz-source" id="source3" checked={sourceFilter === 'all'} onChange={() => handleSourceChange('all')} />
+                  <label htmlFor="source3">All</label>
                 </div>
               </div>
 
@@ -699,7 +706,7 @@ const QuizGeneratorPage = () => {
                 {filteredSyllabus.length === 0 ? (
                   <div className="alert alert-warning small">
                     <i className="bi bi-exclamation-triangle me-2"></i>
-                    No {sourceFilter === 'manual' ? "manually added" : "PDF extracted"} syllabus data found. Please go to Settings to add syllabus data.
+                    No {sourceFilter === 'all' ? "" : sourceFilter === 'manual' ? "manually added " : "PDF extracted "}syllabus data found. Please go to Settings to add syllabus data.
                   </div>
                 ) : (
                   <>
@@ -791,7 +798,7 @@ const QuizGeneratorPage = () => {
                                       style={{ transform: 'scale(1.2)' }}
                                     />
                                     <div>
-                                      <div className="fw-bold fs-6" style={{ color: 'var(--text-primary)' }}>Chpt {ch.displayNum}: {ch.name}</div>
+                                      <div className="fw-bold fs-6" style={{ color: 'var(--text-primary)' }}>{ch.displayNum}. {ch.name}</div>
                                       <div className="small text-truncate" style={{ maxWidth: '300px', color: 'var(--text-secondary)' }}>
                                         {ch.topics}
                                       </div>

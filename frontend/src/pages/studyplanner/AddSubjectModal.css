@@ -405,6 +405,7 @@
 
 /* Modal Footer */
 .modal-footer {
+  margin-top: 1rem;
   display: flex;
   gap: 1rem;
   padding: 1.5rem 2rem;

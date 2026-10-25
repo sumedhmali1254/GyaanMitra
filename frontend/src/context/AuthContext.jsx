@@ -19,6 +19,14 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem("token", userData.token);
   };
 
+  const updateUser = (userData) => {
+    setUser((currentUser) => {
+      const updatedUser = { ...currentUser, ...userData };
+      localStorage.setItem("user", JSON.stringify(updatedUser));
+      return updatedUser;
+    });
+  };
+
   const guestLogin = (userData) => {
     setUser(userData);
     setToken(userData.token);
@@ -29,16 +37,38 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    let savedMusicState = null;
+    try {
+      savedMusicState = JSON.parse(
+        localStorage.getItem("gyaanmitra_music_state") || "null",
+      );
+    } catch (error) {
+      console.error("Unable to preserve music state during logout:", error);
+    }
+    if (savedMusicState) {
+      savedMusicState.isPlaying = false;
+    }
+
     setUser(null);
     setToken(null);
     localStorage.clear();
+    if (savedMusicState) {
+      localStorage.setItem(
+        "gyaanmitra_music_state",
+        JSON.stringify(savedMusicState),
+      );
+    }
     setGuestSecondsRemaining(null);
   };
 
   const fetchMe = async () => {
     try {
       const res = await api.get("/auth/me");
-      setUser((prev) => ({ ...prev, ...res.data.data }));
+      setUser((prev) => {
+        const updatedUser = { ...prev, ...res.data.data };
+        localStorage.setItem("user", JSON.stringify(updatedUser));
+        return updatedUser;
+      });
     } catch (error) {
       logout();
     } finally {
@@ -80,6 +110,7 @@ export const AuthProvider = ({ children }) => {
         user,
         token,
         login,
+        updateUser,
         guestLogin,
         guestSecondsRemaining,
         logout,

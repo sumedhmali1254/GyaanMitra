@@ -3,6 +3,7 @@ import dayjs from "dayjs";
 import { useChat } from "../context/ChatContext";
 import ConfirmationModal from "./ConfirmationModal";
 import "./SubSidebar.css";
+import { usePersistentBoolean } from "../hooks/usePersistentBoolean";
 
 const ChatSubSidebar = () => {
   const { 
@@ -17,6 +18,10 @@ const ChatSubSidebar = () => {
   } = useChat();
 
   const [sessionToDelete, setSessionToDelete] = useState(null);
+  const [isCollapsed, setIsCollapsed] = usePersistentBoolean(
+    "gyaanmitra.sidebar.chat.collapsed",
+    false,
+  );
   const [editingSessionId, setEditingSessionId] = useState(null);
   const [editTitle, setEditTitle] = useState("");
 
@@ -57,7 +62,18 @@ const ChatSubSidebar = () => {
   };
 
   return (
-    <aside className="sub-sidebar">
+    <aside className={`sub-sidebar collapsible-sub-sidebar ${isCollapsed ? "is-collapsed" : ""}`}>
+      <button
+        type="button"
+        className="sub-sidebar-toggle"
+        onClick={() => setIsCollapsed((collapsed) => !collapsed)}
+        aria-label={isCollapsed ? "Expand chat history sidebar" : "Collapse chat history sidebar"}
+        aria-expanded={!isCollapsed}
+        title={isCollapsed ? "Expand chat history sidebar" : "Collapse chat history sidebar"}
+      >
+        <i className={`bi ${isCollapsed ? "bi-chevron-right" : "bi-chevron-left"}`} />
+      </button>
+      <span className="sub-sidebar-collapsed-label" aria-hidden="true">CHAT HISTORY</span>
       <div className="sub-sidebar-header">
         <h3 className="sub-sidebar-title">
           <i className="bi bi-chat-dots"></i> AI Chat History

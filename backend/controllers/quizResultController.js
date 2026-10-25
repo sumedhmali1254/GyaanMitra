@@ -35,7 +35,7 @@ exports.getQuizStats = async (req, res) => {
   try {
     const results = await QuizResult.findAll({
       where: { userId: req.user.id },
-      order: [['created_at', 'ASC']],
+      order: [['created_at', 'DESC']],
       limit: 100
     });
     

@@ -128,6 +128,9 @@ class SubjectInputSchema(BaseModel):
     chapters: int = Field(..., ge=1, le=100)
     avg_chapter_time: Optional[float] = Field(None, ge=0.5)
     beginnerMode: bool = Field(default=False)
+    startTime: str = "06:00 AM"
+    endTime: str = "10:00 PM"
+    weeklyAvailability: Optional[Dict[str, Any]] = None
     
     # Beginner mode fields
     familiarity: Optional[str] = Field(default="none")
@@ -146,12 +149,18 @@ class SubjectInputSchema(BaseModel):
         except ValueError:
             raise ValueError('examDate must be in YYYY-MM-DD format')
 
+    @field_validator('startTime', 'endTime')
+    @classmethod
+    def validate_study_time(cls, value):
+        parse_time_to_hour(value)
+        return value
+
 
 class GeneratePlanRequest(BaseModel):
     """Request schema for generating weekly study plan."""
     availableHoursPerDay: float = Field(..., ge=0.5)
-    startHour: int = Field(default=6, ge=0, le=23)
-    endHour: int = Field(default=20, ge=0, le=23)
+    startHour: float = Field(default=6, ge=0, le=23)
+    endHour: float = Field(default=20, ge=0, le=24)
     subjects: List[SubjectInputSchema] = Field(..., min_length=1)
     weeklyAvailability: Optional[Dict[str, Any]] = None
     
@@ -160,7 +169,7 @@ class GeneratePlanRequest(BaseModel):
         data = info.data
         if 'startHour' in data and v <= data['startHour']:
             # Auto-fix instead of rejecting
-            return max(data['startHour'] + 1, 20)
+            return min(max(data['startHour'] + 0.25, 20), 24)
         return v
 
 
@@ -256,19 +265,15 @@ def predict_priority(features):
 
 
 def parse_time_to_hour(time_str: str) -> float:
-    """Convert 'HH:MM AM/PM' or 'HH:MM' to decimal hour (e.g., 18.5 for 6:30 PM)."""
-    time_str = time_str.strip()
-    try:
-        # Try HH:MM AM/PM format
-        if "AM" in time_str.upper() or "PM" in time_str.upper():
-            dt = datetime.strptime(time_str.upper(), "%I:%M %p")
-            return dt.hour + dt.minute / 60.0
-        else:
-            # Try HH:MM (24-hour) format
-            parts = time_str.split(":")
-            return int(parts[0]) + int(parts[1]) / 60.0
-    except Exception:
-        return 6.0  # safe default
+    """Convert a 12- or 24-hour time string into decimal hours."""
+    normalized = time_str.strip().upper()
+    for time_format in ("%I:%M %p", "%I %p", "%H:%M", "%H"):
+        try:
+            parsed = datetime.strptime(normalized, time_format)
+            return parsed.hour + parsed.minute / 60.0
+        except ValueError:
+            continue
+    raise ValueError(f"Invalid time '{time_str}'. Use a time such as 07:00 PM or 19:00.")
 
 
 def format_decimal_to_ampm(decimal_hour: float) -> str:
@@ -286,7 +291,7 @@ def format_decimal_to_ampm(decimal_hour: float) -> str:
     return f"{h12:02d}:{m:02d} {period}"
 
 
-def get_day_window(day_date: date, weekly_avail: Optional[Dict], default_start: int, default_end: int) -> tuple:
+def get_day_window(day_date: date, weekly_avail: Optional[Dict], default_start: float, default_end: float) -> tuple:
     """
     Returns (start_hour_decimal, end_hour_decimal, is_enabled) for a specific date.
     Respects user's per-day custom availability.
@@ -299,8 +304,8 @@ def get_day_window(day_date: date, weekly_avail: Optional[Dict], default_start: 
         if not enabled:
             return (0, 0, False)
         
-        start_h = parse_time_to_hour(config.get("start", f"{default_start}:00 AM"))
-        end_h = parse_time_to_hour(config.get("end", f"{default_end}:00 PM"))
+        start_h = parse_time_to_hour(config.get("start", format_decimal_to_ampm(default_start)))
+        end_h = parse_time_to_hour(config.get("end", format_decimal_to_ampm(default_end)))
         
         if end_h <= start_h:
             end_h = start_h + 4  # safety fallback
@@ -317,8 +322,8 @@ def get_day_window(day_date: date, weekly_avail: Optional[Dict], default_start: 
 def generate_slot_based_plan(
     subjects_data: List[Dict],
     available_hours_per_day: float,
-    start_hour: int,
-    end_hour: int,
+    start_hour: float,
+    end_hour: float,
     weekly_availability: Optional[Dict] = None
 ) -> tuple:
     """
@@ -348,6 +353,9 @@ def generate_slot_based_plan(
             "examDate": exam_date,
             "chapters": total_chapters,
             "avg_chapter_time": avg_time,
+            "startTime": subj.get("startTime", format_decimal_to_ampm(start_hour)),
+            "endTime": subj.get("endTime", format_decimal_to_ampm(end_hour)),
+            "weeklyAvailability": subj.get("weeklyAvailability"),
             "priority": subj.get("priority", "normal"),
             "chapters_remaining": total_chapters,
             "next_chapter": 1,
@@ -376,12 +384,31 @@ def generate_slot_based_plan(
             continue
         
         max_study_hours = min(available_window, available_hours_per_day)
+
+        def subject_window(subject_state):
+            subject_weekly = subject_state.get("weeklyAvailability")
+            if subject_weekly:
+                return get_day_window(
+                    current_date, subject_weekly, start_hour, end_hour
+                )
+            subject_start = parse_time_to_hour(subject_state["startTime"])
+            subject_end = parse_time_to_hour(subject_state["endTime"])
+            return subject_start, subject_end, subject_end > subject_start
+
+        def has_remaining_window(subject_state):
+            subject_start, subject_end, subject_enabled = subject_window(subject_state)
+            return (
+                subject_enabled
+                and min(window_end, subject_end) > max(window_start, subject_start)
+            )
         
         # Build strict urgency sorted queue
         # Exclude exam days from study scheduling (subject must be finished by the day BEFORE the exam)
         active_subjects = [
             s for s in subject_states
-            if s["chapters_remaining"] > 0 and s["examDate"] > current_date
+            if s["chapters_remaining"] > 0
+            and s["examDate"] > current_date
+            and has_remaining_window(s)
         ]
         
         # V5 Block-Based Scheduling: Max 1-2 subjects per day, contiguous blocks.
@@ -391,6 +418,7 @@ def generate_slot_based_plan(
         tomorrow_exam_subjects = [
             s for s in subject_states
             if (s["examDate"] - current_date).days == 1
+            and has_remaining_window(s)
         ]
         
         if tomorrow_exam_subjects:
@@ -399,7 +427,9 @@ def generate_slot_based_plan(
             # Normal Priority Logic: sort by urgency and priority, take top 2
             active_subjects = [
                 s for s in subject_states
-                if s["chapters_remaining"] > 0 and s["examDate"] > current_date
+                if s["chapters_remaining"] > 0
+                and s["examDate"] > current_date
+                and has_remaining_window(s)
             ]
             active_subjects.sort(key=lambda s: (
                 (s["examDate"] - current_date).days,
@@ -409,6 +439,15 @@ def generate_slot_based_plan(
         
         if not subjects_for_today:
             continue
+
+        subjects_for_today.sort(
+            key=lambda subject_state: (
+                max(window_start, subject_window(subject_state)[0]),
+                min(window_end, subject_window(subject_state)[1]),
+                (subject_state["examDate"] - current_date).days,
+                priority_order.get(subject_state["priority"], 2),
+            )
+        )
             
         cursor = window_start
         hours_used = 0.0
@@ -417,13 +456,26 @@ def generate_slot_based_plan(
         for subj_state in subjects_for_today:
             if hours_used >= max_study_hours:
                 break
+
+            subject_start, subject_end, subject_enabled = subject_window(subj_state)
+            if not subject_enabled:
+                continue
+            subject_start = max(subject_start, window_start)
+            subject_end = min(subject_end, window_end)
+            daily_subj_start_cursor = max(cursor, subject_start)
+            subject_budget = min(
+                subject_end - daily_subj_start_cursor,
+                max_study_hours - hours_used,
+            )
+            if subject_budget <= 0:
+                continue
                 
             is_exam_tomorrow = (subj_state["examDate"] - current_date).days == 1
             
             if is_exam_tomorrow:
                 # If exam is tomorrow, consume as much budget as possible, split evenly among tomorrow's exams
-                target_hours = (max_study_hours - hours_used) / max(1, len([s for s in subjects_for_today if (s["examDate"] - current_date).days == 1]))
-                target_hours = min(target_hours, max_study_hours - hours_used)
+                target_hours = (max_study_hours - hours_used) / max(1, len(tomorrow_exam_subjects))
+                target_hours = min(target_hours, subject_budget)
                 
                 # Cap pure revision to 2.0 hours max per subject so it doesn't take the whole day
                 if subj_state["chapters_remaining"] == 0:
@@ -433,7 +485,7 @@ def generate_slot_based_plan(
                 total_hours_left_for_subject = (subj_state["chapters_remaining"] * subj_state["avg_chapter_time"]) - subj_state["invested_time_in_current_chapter"]
                 
                 fair_daily_quota = math.ceil((total_hours_left_for_subject / days_left_for_exam) * 4) / 4
-                remaining_day_budget = max_study_hours - hours_used
+                remaining_day_budget = subject_budget
                 target_hours = min(fair_daily_quota, remaining_day_budget)
                 
                 if target_hours < 1.0 and total_hours_left_for_subject >= 1.0:
@@ -443,7 +495,7 @@ def generate_slot_based_plan(
                 continue
 
             current_subj_scheduled = 0.0
-            daily_subj_start_cursor = cursor
+            target_hours = min(target_hours, subject_budget)
             initial_chapter = subj_state["next_chapter"] if subj_state["chapters_remaining"] > 0 else "Revision"
             
             # Progress through chapters
@@ -473,7 +525,7 @@ def generate_slot_based_plan(
             if not is_exam_tomorrow and final_session_duration < 1.0 and ((subj_state["chapters_remaining"] * subj_state["avg_chapter_time"]) >= 1.0):
                  final_session_duration = 1.0
             
-            final_session_duration = min(final_session_duration, max_study_hours - hours_used)
+            final_session_duration = min(final_session_duration, subject_budget)
             
             if final_session_duration > 0.4:
                 days_left = max(1, (subj_state["examDate"] - current_date).days)
@@ -494,7 +546,7 @@ def generate_slot_based_plan(
                 timetable.append(entry)
                 
                 # Final state sync
-                cursor += final_session_duration
+                cursor = daily_subj_start_cursor + final_session_duration
                 hours_used += final_session_duration
                 subj_state["hours_scheduled"] += final_session_duration
             
@@ -510,8 +562,8 @@ def calculate_feasibility_v2(
     subject_states: List[Dict],
     available_hours_per_day: float,
     weekly_availability: Optional[Dict] = None,
-    start_hour: int = 6,
-    end_hour: int = 20
+    start_hour: float = 6,
+    end_hour: float = 20
 ) -> tuple:
     today = datetime.now().date()
     
@@ -799,6 +851,9 @@ async def generate_study_plan(request: GeneratePlanRequest):
                 "examDate": subject_input.examDate,
                 "chapters": subject_input.chapters,
                 "avg_chapter_time": subject_input.avg_chapter_time,
+                "startTime": subject_input.startTime,
+                "endTime": subject_input.endTime,
+                "weeklyAvailability": subject_input.weeklyAvailability,
                 "priority": priority,
                 "confidence": float(confidence),
                 "daysLeft": days_left
@@ -904,7 +959,7 @@ if __name__ == "__main__":
     # print("="*50 + "\n")
 
     # [DEPLOYMENT UPDATE]: Render requires 0.0.0.0 and its injected PORT.
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 8000))
     print(f"Starting Study Planner API Server on 0.0.0.0:{port}")
     uvicorn.run(
         "app:app",

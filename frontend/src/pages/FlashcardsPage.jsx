@@ -1,8 +1,16 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useSettings } from "../context/SettingsContext";
-import toast from "react-hot-toast";
 import api from "../services/api";
+
+const chapterColors = [
+  { gradient: "linear-gradient(135deg, #5d4037 0%, #795548 100%)", tint: "rgba(121, 85, 72, 0.12)", accent: "#795548" },
+  { gradient: "linear-gradient(135deg, #795548 0%, #8d6e63 100%)", tint: "rgba(141, 110, 99, 0.12)", accent: "#8d6e63" },
+  { gradient: "linear-gradient(135deg, #6d5148 0%, #a1887f 100%)", tint: "rgba(161, 136, 127, 0.14)", accent: "#8d6e63" },
+  { gradient: "linear-gradient(135deg, #5d4037 0%, #8d6e63 100%)", tint: "rgba(93, 64, 55, 0.10)", accent: "#5d4037" },
+  { gradient: "linear-gradient(135deg, #795548 0%, #a1887f 100%)", tint: "rgba(121, 85, 72, 0.10)", accent: "#795548" },
+  { gradient: "linear-gradient(135deg, #6d5148 0%, #b08968 100%)", tint: "rgba(176, 137, 104, 0.12)", accent: "#8d6e63" },
+];
 
 const FlashcardsPage = () => {
   const { syllabusData, preferredFlashcardSource } = useSettings();
@@ -33,9 +41,20 @@ const FlashcardsPage = () => {
   };
 
   // Filter subjects by the persistent source from Settings
-  const tabList = syllabusData
-    .filter(s => s.source === preferredFlashcardSource)
-    .map(s => s.courseTitle);
+  const tabList = useMemo(
+    () => [
+      ...new Set(
+        syllabusData
+          .filter((syllabus) =>
+            preferredFlashcardSource === "all" ||
+            syllabus.source === preferredFlashcardSource,
+          )
+          .map((syllabus) => syllabus.courseTitle)
+          .filter(Boolean),
+      ),
+    ],
+    [syllabusData, preferredFlashcardSource],
+  );
 
   useEffect(() => {
     if (tabList.length > 0 && (!activeSubjectId || !tabList.includes(activeSubjectId))) {
@@ -44,13 +63,36 @@ const FlashcardsPage = () => {
   }, [tabList, activeSubjectId]);
 
   const subjectCards = allFlashcards.filter(c => c.subject === activeSubjectId);
+  const chapterIndexFor = (chapterName, source) => {
+    const course = syllabusData.find(
+      (item) =>
+        item.courseTitle === activeSubjectId &&
+        (!source || item.source === source),
+    );
+    const chapterIndex = course?.chapters?.findIndex(
+      (item) => item.name === chapterName,
+    );
+    return chapterIndex >= 0 ? chapterIndex + 1 : null;
+  };
 
   // Group by chapter
   const cardsByChapter = subjectCards.reduce((acc, card) => {
-    if (!acc[card.chapter]) acc[card.chapter] = [];
-    acc[card.chapter].push(card);
+    const key = `${card.source}:${card.chapter}`;
+    if (!acc[key]) acc[key] = { name: card.chapter, source: card.source, cards: [] };
+    acc[key].cards.push(card);
     return acc;
   }, {});
+  const orderedChapterGroups = Object.entries(cardsByChapter)
+    .map(([key, group]) => ({
+      key,
+      ...group,
+      chapterNumber: chapterIndexFor(group.name, group.source),
+    }))
+    .sort((a, b) => {
+      if (a.chapterNumber === null) return b.chapterNumber === null ? 0 : 1;
+      if (b.chapterNumber === null) return -1;
+      return a.chapterNumber - b.chapterNumber;
+    });
 
   return (
     <div className="page-container" style={{ minHeight: '100vh', paddingBottom: '5rem' }}>
@@ -63,39 +105,81 @@ const FlashcardsPage = () => {
         </div>
 
         {/* Dynamic Subject Tabs */}
-        <div className="d-flex gap-2 overflow-auto pb-2 scroll-hide flex-nowrap" style={{ whiteSpace: 'nowrap' }}>
-          {tabList.map((tab) => (
+        <div className="d-flex gap-2 flex-wrap">
+          {tabList.map((tab) => {
+            const hasFlashcards = allFlashcards.some((flashcard) => flashcard.subject === tab);
+            return (
             <button
               key={tab}
               onClick={() => setActiveSubjectId(tab)}
-              className={`btn px-4 py-2 rounded-pill fw-bold transition-all text-nowrap flex-shrink-0 ${activeSubjectId === tab ? 'btn-primary shadow-sm' : 'btn-light text-muted border'}`}
+              className={`btn px-4 py-2 rounded-pill fw-bold transition-all ${activeSubjectId === tab ? 'btn-primary shadow-sm' : 'btn-light text-muted border'}`}
+              style={{ whiteSpace: "normal", overflowWrap: "anywhere", maxWidth: "100%" }}
+              aria-label={`${tab}: ${hasFlashcards ? "flashcards available" : "no flashcards generated"}`}
             >
               {tab}
+              <span
+                className="ms-2 d-inline-flex align-items-center justify-content-center"
+                style={{
+                  width: "18px",
+                  height: "18px",
+                  borderRadius: "50%",
+                  background: hasFlashcards ? "rgba(56, 102, 65, 0.14)" : "rgba(121, 85, 72, 0.12)",
+                  color: hasFlashcards ? "var(--success)" : "var(--primary)",
+                  fontSize: "0.68rem",
+                  lineHeight: 1,
+                  verticalAlign: "middle",
+                }}
+                title={hasFlashcards ? "Flashcards available" : "No flashcards generated"}
+                aria-hidden="true"
+              >
+                <i className={`bi ${hasFlashcards ? "bi-check-lg" : "bi-x-lg"}`}></i>
+              </span>
             </button>
-          ))}
+            );
+          })}
         </div>
       </div>
 
       <div className="animate-fade-in">
-        {Object.entries(cardsByChapter).length > 0 ? (
-          Object.entries(cardsByChapter).map(([chapter, cards], idx) => (
-            <div key={idx} className="mb-5">
+        {orderedChapterGroups.length > 0 ? (
+          orderedChapterGroups.map((chapterGroup, groupIndex) => {
+            const chapterNumber = chapterGroup.chapterNumber;
+            const chapterColor = chapterColors[((chapterNumber || groupIndex + 1) - 1) % chapterColors.length];
+            return (
+            <div
+              key={chapterGroup.key}
+              className="mb-5 animate-fade-in"
+              style={{ animationDelay: `${Math.min(groupIndex * 70, 350)}ms` }}
+            >
               <div className="mb-4">
                 <div className="d-flex align-items-center justify-content-between">
-                  <h5 className="fw-bold mb-0 text-dark-emphasis">{chapter}</h5>
-                  <span className="badge rounded-pill bg-light text-muted border px-3 py-2">{cards.length} Cards</span>
+                  <h5 className="fw-bold mb-0 text-dark-emphasis">
+                    {chapterNumber ? `${chapterNumber}. ` : ""}
+                    {chapterGroup.name}
+                  </h5>
+                  <span className="badge rounded-pill bg-light text-muted border px-3 py-2">{chapterGroup.cards.length} Cards</span>
                 </div>
                 <div className="mt-2 w-100 bg-secondary" style={{ height: '2px', opacity: 0.1 }}></div>
               </div>
               <div className="row g-4">
-                {cards.map(card => (
-                  <div className="col-md-6 col-lg-4" key={card.id}>
-                    <Flashcard card={card} flipped={flippedCards[card.id]} onToggle={() => toggleCard(card.id)} />
+                {chapterGroup.cards.map((card, cardIndex) => (
+                  <div
+                    className="col-md-6 col-lg-4 animate-slide-up"
+                    key={card.id}
+                    style={{ animationDelay: `${Math.min(cardIndex * 60, 300)}ms` }}
+                  >
+                    <Flashcard
+                      card={card}
+                      colors={chapterColor}
+                      flipped={flippedCards[card.id]}
+                      onToggle={() => toggleCard(card.id)}
+                    />
                   </div>
                 ))}
               </div>
             </div>
-          ))
+            );
+          })
         ) : (
           <div className="text-center py-5 mt-4">
             <div className="mb-3 text-muted" style={{ opacity: 0.5 }}>
@@ -112,23 +196,57 @@ const FlashcardsPage = () => {
   );
 };
 
-const Flashcard = ({ card, flipped, onToggle }) => (
+const Flashcard = ({ card, colors, flipped, onToggle }) => (
   <div className="flashcard-container" style={{ height: '300px' }} onClick={onToggle}>
     <div className={`flashcard ${flipped ? 'flipped' : ''}`}>
-      <div className="flashcard-front shadow-sm d-flex flex-column justify-content-center align-items-center">
-        <h5 className="text-white mb-0 px-3 fw-bold text-center" style={{ lineHeight: 1.5 }}>{card.question}</h5>
+      <div
+        className="flashcard-front shadow-sm d-flex flex-column justify-content-center align-items-center"
+        style={{
+          background: colors.gradient,
+          border: "none",
+          boxShadow: `0 12px 28px ${colors.accent}35`,
+        }}
+      >
+        <h5
+          className="text-white mb-0 px-3 fw-bold text-center"
+          style={{
+            lineHeight: 1.55,
+            fontSize: "clamp(1rem, 1.4vw, 1.25rem)",
+            letterSpacing: "0.01em",
+            overflowWrap: "anywhere",
+          }}
+        >
+          {card.question}
+        </h5>
         <div className="position-absolute bottom-0 start-0 w-100 pb-3 text-center">
           <span className="text-white-50" style={{ fontSize: '0.65rem', letterSpacing: '2px', fontWeight: 'bold' }}><i className="bi bi-arrow-repeat me-1"></i>CLICK TO REVEAL</span>
         </div>
       </div>
-      <div className="flashcard-back shadow-sm">
-        <span className="text-primary small mb-3 text-uppercase fw-bold ls-wide" style={{ fontSize: '0.7rem' }}>The Insight</span>
-        <p className="text-dark mb-0 fs-6 fw-bold px-2">{card.answer}</p>
-        <div className="position-absolute bottom-0 start-0 w-100 pb-4">
-          <div className="bg-white border d-inline-block px-3 py-1 rounded-pill text-muted shadow-sm" style={{ fontSize: '0.65rem', fontWeight: '800', letterSpacing: '0.5px' }}>
-            {card.chapter?.toUpperCase()}
-          </div>
-        </div>
+      <div
+        className="flashcard-back shadow-sm"
+        style={{
+          background: `linear-gradient(145deg, ${colors.tint}, var(--bg-card, #ffffff))`,
+          border: `1px solid ${colors.accent}45`,
+          boxShadow: `0 12px 28px ${colors.accent}20`,
+        }}
+      >
+        <span
+          className="small mb-3 text-uppercase fw-bold ls-wide"
+          style={{ color: colors.accent, fontSize: "0.72rem", letterSpacing: "0.12em" }}
+        >
+          The Insight
+        </span>
+        <p
+          className="mb-0 fw-semibold px-2"
+          style={{
+            color: "var(--text-primary)",
+            fontSize: "clamp(0.95rem, 1.2vw, 1.1rem)",
+            lineHeight: 1.65,
+            overflowWrap: "anywhere",
+          }}
+        >
+          {card.answer}
+        </p>
       </div>
     </div>
   </div>

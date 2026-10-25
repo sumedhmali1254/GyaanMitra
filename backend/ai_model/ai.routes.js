@@ -4,6 +4,7 @@ const {
     generateFlashcardsBulk,
     chatWithAi,
 } = require("./ai.controller");
+const { fetchLmStudioModels, getLmStudioChatModel } = require("./lmStudio");
 
 // Auth middleware
 const { protect } = require("../middleware/authMiddleware");
@@ -12,25 +13,30 @@ const router = express.Router();
 
 // Health check for LM Studio connection (no auth needed)
 router.get("/ai-health", async (req, res) => {
-    const rawURL = process.env.LM_STUDIO_URL || "http://127.0.0.1:1254";
-    const baseURL = rawURL.replace(/\/v1\/?$/, "");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
     try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3000);
+        const models = await fetchLmStudioModels({ signal: controller.signal });
+        const modelNames = models
+            .map((model) => model.id)
+            .filter((modelId) => typeof modelId === "string");
 
-        const response = await fetch(`${baseURL}/v1/models`, {
-            signal: controller.signal,
-        });
-        clearTimeout(timeout);
-
-        if (response.ok) {
-            const data = await response.json();
-            const modelNames = (data.data || []).map(m => m.id);
+        try {
+            getLmStudioChatModel(models);
             return res.json({ connected: true, models: modelNames });
+        } catch (error) {
+            return res.json({
+                connected: false,
+                models: modelNames,
+                error: error.message,
+            });
         }
-        return res.json({ connected: false, error: "LM Studio responded with error" });
     } catch (err) {
-        return res.json({ connected: false, error: "LM Studio is not reachable" });
+        console.error("[LM Studio Health] Connection check failed:", err.message);
+        return res.json({ connected: false, error: err.message });
+    } finally {
+        clearTimeout(timeout);
     }
 });
 

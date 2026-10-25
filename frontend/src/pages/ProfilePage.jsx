@@ -6,7 +6,7 @@ import { useSettings } from "../context/SettingsContext";
 import api, { API_ORIGIN } from "../services/api";
 
 const ProfilePage = ({ isEmbedded = false }) => {
-  const { user, token, fetchMe, logout } = useContext(AuthContext);
+  const { user, token, updateUser, logout } = useContext(AuthContext);
   const { syllabusData } = useSettings();
   const [isEditing, setIsEditing] = useState(false);
   const [sessions, setSessions] = useState([]);
@@ -20,6 +20,9 @@ const ProfilePage = ({ isEmbedded = false }) => {
     avatar: null,
   });
   const [avatarFile, setAvatarFile] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState("");
+  const [avatarRemoved, setAvatarRemoved] = useState(false);
+  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -49,6 +52,29 @@ const ProfilePage = ({ isEmbedded = false }) => {
       });
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!avatarFile) {
+      setAvatarPreview("");
+      return undefined;
+    }
+
+    const previewUrl = URL.createObjectURL(avatarFile);
+    setAvatarPreview(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [avatarFile]);
+
+  const avatarUrl =
+    avatarPreview ||
+    (!avatarRemoved && profile.avatar
+      ? profile.avatar.startsWith("http")
+        ? profile.avatar
+        : `${API_ORIGIN}${profile.avatar}`
+      : "");
+
+  useEffect(() => {
+    setAvatarLoadFailed(false);
+  }, [avatarUrl]);
 
   // Aggregate Stats
   const stats = useMemo(() => {
@@ -137,7 +163,36 @@ const ProfilePage = ({ isEmbedded = false }) => {
   };
 
   const handleAvatarChange = (e) => {
-    setAvatarFile(e.target.files[0]);
+    const file = e.target.files?.[0];
+    if (file) {
+      setAvatarLoadFailed(false);
+      setAvatarRemoved(false);
+      setAvatarFile(file);
+    }
+  };
+
+  const handleRemoveAvatar = () => {
+    setAvatarFile(null);
+    setAvatarPreview("");
+    setAvatarRemoved(true);
+    setAvatarLoadFailed(false);
+    setProfile((current) => ({ ...current, avatar: null }));
+  };
+
+  const handleCancelEdit = () => {
+    setProfile({
+      firstName: user?.firstName || "",
+      lastName: user?.lastName || "",
+      email: user?.email || "",
+      phone: user?.phone || "",
+      location: user?.location || "",
+      bio: user?.bio || "",
+      avatar: user?.avatar || null,
+    });
+    setAvatarFile(null);
+    setAvatarRemoved(false);
+    setAvatarLoadFailed(false);
+    setIsEditing(false);
   };
 
   const handleSave = async () => {
@@ -151,14 +206,23 @@ const ProfilePage = ({ isEmbedded = false }) => {
       updateData.append("location", profile.location);
       updateData.append("bio", profile.bio);
       if (avatarFile) updateData.append("avatar", avatarFile);
+      if (avatarRemoved) updateData.append("removeAvatar", "true");
 
-      const res = await api.put("/auth/profile", updateData);
+      const res = await api.put("/auth/profile", updateData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
 
+      if (res.data?.data) {
+        setProfile((current) => ({ ...current, ...res.data.data }));
+        updateUser?.(res.data.data);
+      }
+      setAvatarFile(null);
+      setAvatarRemoved(false);
+      setAvatarLoadFailed(false);
       toast.success("Profile updated successfully!");
       setIsEditing(false);
-
-      // Refresh global state
-      if (fetchMe) fetchMe();
     } catch (error) {
       toast.error(error.response?.data?.message || "Update failed");
     } finally {
@@ -169,6 +233,14 @@ const ProfilePage = ({ isEmbedded = false }) => {
   const fullName =
     `${profile.firstName} ${profile.lastName}`.trim() || "Learner";
 
+  const editAvatarUrl =
+    avatarPreview ||
+    (!avatarRemoved && profile.avatar
+      ? profile.avatar.startsWith("http")
+        ? profile.avatar
+        : `${API_ORIGIN}${profile.avatar}`
+      : "");
+
   const content = (
     <>
       <div className="row g-4 animate-fade-in">
@@ -176,29 +248,49 @@ const ProfilePage = ({ isEmbedded = false }) => {
         <div className="col-lg-4">
           <div className="card p-4 text-center animate-fade-in">
             <div
+              className="profile-avatar-display"
               style={{
                 width: "120px",
                 height: "120px",
+                flex: "0 0 120px",
                 borderRadius: "50%",
                 margin: "0 auto 1.5rem",
                 fontSize: "3rem",
                 color: "white",
                 fontWeight: "bold",
-                boxShadow: "0 8px 16px rgba(121, 85, 72, 0.3)",
-                backgroundImage: profile.avatar
-                  ? // [DEPLOYMENT UPDATE]: Resolve uploaded avatars from the configured backend.
-                    `url(${profile.avatar.startsWith("http") ? profile.avatar : `${API_ORIGIN}${profile.avatar}`})`
-                  : "linear-gradient(135deg, #795548 0%, #5d4037 100%)",
-                backgroundSize: "cover",
-                backgroundPosition: "center",
+                border: "4px solid #fff",
+                outline: "2px solid rgba(121, 85, 72, 0.25)",
+                boxShadow: "0 8px 20px rgba(93, 64, 55, 0.24)",
+                background:
+                  !avatarUrl || avatarLoadFailed
+                    ? "linear-gradient(135deg, #795548 0%, #5d4037 100%)"
+                    : "#efebe9",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 overflow: "hidden",
+                userSelect: "none",
+                cursor: "default",
               }}
             >
-              {!profile.avatar && (
-                <span>{fullName.charAt(0).toUpperCase()}</span>
+              {avatarUrl && !avatarLoadFailed ? (
+                <img
+                  src={avatarUrl}
+                  alt={`${fullName}'s profile`}
+                  onError={() => setAvatarLoadFailed(true)}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    display: "block",
+                    userSelect: "none",
+                    pointerEvents: "none",
+                  }}
+                />
+              ) : (
+                <span style={{ cursor: "default", userSelect: "none", caretColor: "transparent" }}>
+                  {fullName.charAt(0).toUpperCase()}
+                </span>
               )}
             </div>
 
@@ -206,24 +298,6 @@ const ProfilePage = ({ isEmbedded = false }) => {
             <p className="text-muted mb-3">{profile.email}</p>
 
             <div className="d-flex justify-content-center flex-wrap gap-2 mb-4">
-              <span
-                className="badge rounded-pill"
-                style={{
-                  background: "#efebe9",
-                  color: "#5d4037",
-                  padding: "0.6rem 1.25rem",
-                  fontSize: "0.85rem",
-                  fontWeight: "600",
-                  whiteSpace: "nowrap",
-                  border: "1px solid #d7ccc8",
-                }}
-              >
-                <i
-                  className="bi bi-star-fill me-2"
-                  style={{ color: "#8d6e63" }}
-                ></i>
-                Premium Tier
-              </span>
               <span
                 className="badge rounded-pill"
                 style={{
@@ -319,14 +393,37 @@ const ProfilePage = ({ isEmbedded = false }) => {
                 </div>
                 <div className="col-md-6">
                   <label className="form-label fw-bold small text-muted">
-                    Avatar Image
+                    Profile Photo
                   </label>
-                  <input
-                    type="file"
-                    className="form-control"
-                    accept="image/*"
-                    onChange={handleAvatarChange}
-                  />
+                  <div className="d-flex flex-column align-items-start gap-2">
+                    <input
+                      type="file"
+                      className="form-control"
+                      accept="image/*"
+                      onChange={handleAvatarChange}
+                      aria-label="Choose profile photo"
+                    />
+                    {avatarFile && (
+                      <small className="text-muted">
+                        Selected: {avatarFile.name}
+                      </small>
+                    )}
+                    {(editAvatarUrl || avatarFile) && (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={handleRemoveAvatar}
+                        style={{
+                          color: "#795548",
+                          border: "1px solid rgba(121, 85, 72, 0.3)",
+                          background: "#fff",
+                        }}
+                      >
+                        <i className="bi bi-trash3 me-1" />
+                        Remove photo
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="row mb-3">
@@ -389,7 +486,7 @@ const ProfilePage = ({ isEmbedded = false }) => {
                   {isLoading ? "Saving..." : "Save Changes"}
                 </button>
                 <button
-                  onClick={() => setIsEditing(false)}
+                  onClick={handleCancelEdit}
                   className="btn"
                   style={{
                     background: "#f1f5f9",

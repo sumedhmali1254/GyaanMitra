@@ -6,7 +6,6 @@ import { useTimer } from "../context/TimerContext";
 import { AuthContext } from "../context/AuthContext";
 import { useSettings } from "../context/SettingsContext";
 import "./Header.css";
-import { API_ORIGIN } from "../services/api";
 
 const Header = ({ sidebarOpen, toggleSidebar, getPageTitle }) => {
   const [showNotifications, setShowNotifications] = useState(false);
@@ -34,7 +33,7 @@ const Header = ({ sidebarOpen, toggleSidebar, getPageTitle }) => {
     hasStarted,
     showMiniPlayer,
     setShowMiniPlayer,
-  } = useContext(MusicContext);
+  } = useContext(MusicContext) || {};
   const currentTrack =
     hasStarted && current !== null && showMiniPlayer ? tracks[current] : null;
 
@@ -491,24 +490,8 @@ const Header = ({ sidebarOpen, toggleSidebar, getPageTitle }) => {
             className={`header-btn ${showProfile ? "active" : ""}`}
             title="Profile"
             onClick={toggleProfile}
-            style={{ padding: user?.avatar ? "2px" : "0" }}
           >
-            {user?.avatar ? (
-              <div
-                style={{
-                  width: "32px",
-                  height: "32px",
-                  borderRadius: "50%",
-                  // [DEPLOYMENT UPDATE]: Resolve uploaded avatars from the configured backend.
-                  backgroundImage: `url(${API_ORIGIN}${user.avatar})`,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
-                  border: "2px solid rgba(121, 85, 72, 0.2)",
-                }}
-              />
-            ) : (
-              <i className="bi bi-person-circle"></i>
-            )}
+            <i className="bi bi-person-circle" aria-hidden="true"></i>
           </button>
 
           {showProfile && (

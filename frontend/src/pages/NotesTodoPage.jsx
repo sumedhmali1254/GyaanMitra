@@ -398,8 +398,8 @@ const NoteItem = ({ note, onToggle, onPin, onDelete, getCategoryStyle }) => {
             onChange={onToggle}
             className="form-check-input"
             style={{
-              background: note.done ? "var(--success)" : "var(--bg-primary)",
-              borderColor: "rgba(255,255,255,0.2)",
+              backgroundColor: note.done ? "var(--success)" : "var(--bg-primary)",
+              borderColor: note.done ? "var(--success)" : "var(--border-color)",
               cursor: 'pointer'
             }}
           />

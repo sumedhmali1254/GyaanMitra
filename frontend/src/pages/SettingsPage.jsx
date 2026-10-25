@@ -62,6 +62,9 @@ const SettingsPage = () => {
     type: "primary",
     confirmText: "Confirm"
   });
+  const [flashcardDensityDraft, setFlashcardDensityDraft] = useState(
+    String(flashcardsPerChapter),
+  );
 
   const openModal = (config) => setModalConfig({ ...config, show: true });
   const closeModal = () => setModalConfig({ ...modalConfig, show: false });
@@ -75,7 +78,15 @@ const SettingsPage = () => {
 
   const location = useLocation();
   const [localSource, setLocalSource] = useState(preferredFlashcardSource);
-  const [manageTab, setManageTab] = useState('pdf');
+  const [manageTab, setManageTab] = useState('all');
+  const managedCourses = syllabusData
+    .map((course, index) => ({ course, index }))
+    .filter(({ course }) => manageTab === "all" || course.source === manageTab);
+  const manageTabLabel = {
+    all: "all",
+    pdf: "PDF",
+    manual: "manual",
+  }[manageTab];
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -88,6 +99,25 @@ const SettingsPage = () => {
   useEffect(() => {
     setLocalSource(preferredFlashcardSource);
   }, [preferredFlashcardSource]);
+
+  useEffect(() => {
+    setFlashcardDensityDraft(String(flashcardsPerChapter));
+  }, [flashcardsPerChapter]);
+
+  const handleFlashcardDensityChange = (value) => {
+    if (/^\d*$/.test(value)) {
+      setFlashcardDensityDraft(value);
+    }
+  };
+
+  const normalizeFlashcardDensity = () => {
+    const parsed = Number.parseInt(flashcardDensityDraft, 10);
+    const density = Number.isFinite(parsed)
+      ? Math.min(Math.max(parsed, 1), 30)
+      : 1;
+    setFlashcardDensityDraft(String(density));
+    setFlashcardsPerChapter(density);
+  };
 
   const handleSaveFlashcardSource = () => {
     setPreferredFlashcardSource(localSource);
@@ -144,6 +174,40 @@ const SettingsPage = () => {
     setManualChapters(newChapters);
   };
 
+  const handleAddChapter = () => {
+    if (manualChapters.length >= 50) {
+      toast.error("A course can have up to 50 chapters.");
+      return;
+    }
+
+    const chapterCount = manualChapters.length + 1;
+    setManualCourseParams((current) => ({
+      ...current,
+      numChapters: chapterCount,
+    }));
+    setManualChapters((current) => [
+      ...current,
+      { name: "", topics: "", id: chapterCount },
+    ]);
+  };
+
+  const handleRemoveChapter = (chapterId) => {
+    if (manualChapters.length <= 1) {
+      toast.error("A course must have at least one chapter.");
+      return;
+    }
+
+    const remainingChapters = manualChapters
+      .filter((chapter) => chapter.id !== chapterId)
+      .map((chapter, index) => ({ ...chapter, id: index + 1 }));
+
+    setManualChapters(remainingChapters);
+    setManualCourseParams((current) => ({
+      ...current,
+      numChapters: remainingChapters.length,
+    }));
+  };
+
   const handleManualChapterChange = (id, field, value) => {
     setManualChapters(prev => prev.map(ch => ch.id === id ? { ...ch, [field]: value } : ch));
   };
@@ -156,13 +220,17 @@ const SettingsPage = () => {
     const newCourse = {
       courseTitle: manualCourseParams.courseTitle,
       chapters: manualChapters,
-      source: 'manual'
+      source:
+        editingCourseIndex !== null
+          ? syllabusData[editingCourseIndex]?.source || "manual"
+          : "manual",
     };
 
     if (editingCourseIndex !== null) {
       updateSyllabusData(editingCourseIndex, newCourse);
       toast.success(`Updated ${manualCourseParams.courseTitle} successfully!`);
       setEditingCourseIndex(null);
+      setActiveTab("manage");
     } else {
       addSyllabusData(newCourse);
       toast.success(`Success! Added "${manualCourseParams.courseTitle}" and its chapters.`);
@@ -216,8 +284,8 @@ const SettingsPage = () => {
         {`
           .manual-chapters-list input::placeholder, 
           .manual-chapters-list textarea::placeholder {
-            color: #94a3b8 !important;
-            opacity: 0.7 !important;
+            color: var(--input-placeholder) !important;
+            opacity: 1 !important;
             font-weight: 400 !important;
           }
           input:focus, textarea:focus {
@@ -367,12 +435,14 @@ const SettingsPage = () => {
                       <div className="input-group mb-2 shadow-sm" style={{ maxWidth: '280px' }}>
                         <span className="input-group-text bg-white border-end-0" style={{ color: '#795548' }}><i className="bi bi-stack"></i></span>
                         <input
-                          type="number"
+                          type="text"
                           className="form-control border-start-0"
-                          min="1"
-                          max="30"
-                          value={flashcardsPerChapter}
-                          onChange={(e) => setFlashcardsPerChapter(parseInt(e.target.value) || 1)}
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          aria-label="Flashcards per chapter"
+                          value={flashcardDensityDraft}
+                          onChange={(e) => handleFlashcardDensityChange(e.target.value)}
+                          onBlur={normalizeFlashcardDensity}
                         />
                       </div>
                       <p className="text-muted" style={{ fontSize: '0.8rem' }}>Cards to generate **per chapter**.</p>
@@ -383,30 +453,25 @@ const SettingsPage = () => {
                       <h6 className="fw-bold mb-3" style={{ color: '#5d4037', fontSize: '0.9rem' }}>2. Preferred Source</h6>
                       <div className="d-flex flex-column gap-2" style={{ maxWidth: '300px' }}>
                         <div className="btn-group shadow-none border rounded p-1" style={{ background: 'white' }}>
-                          <button
-                            className="btn btn-sm"
-                            style={{
-                              background: localSource === 'pdf' ? '#795548' : 'transparent',
-                              color: localSource === 'pdf' ? 'white' : '#64748b',
-                              border: 'none',
-                              fontWeight: '600'
-                            }}
-                            onClick={() => setLocalSource('pdf')}
-                          >
-                            PDFs
-                          </button>
-                          <button
-                            className="btn btn-sm"
-                            style={{
-                              background: localSource === 'manual' ? '#795548' : 'transparent',
-                              color: localSource === 'manual' ? 'white' : '#64748b',
-                              border: 'none',
-                              fontWeight: '600'
-                            }}
-                            onClick={() => setLocalSource('manual')}
-                          >
-                            Manual
-                          </button>
+                          {[
+                            { value: 'pdf', label: 'PDFs' },
+                            { value: 'manual', label: 'Manual' },
+                            { value: 'all', label: 'All' },
+                          ].map((sourceOption) => (
+                            <button
+                              key={sourceOption.value}
+                              className="btn btn-sm"
+                              style={{
+                                background: localSource === sourceOption.value ? '#795548' : 'transparent',
+                                color: localSource === sourceOption.value ? 'white' : '#64748b',
+                                border: 'none',
+                                fontWeight: '600'
+                              }}
+                              onClick={() => setLocalSource(sourceOption.value)}
+                            >
+                              {sourceOption.label}
+                            </button>
+                          ))}
                         </div>
                         {localSource !== preferredFlashcardSource && (
                           <button
@@ -426,7 +491,9 @@ const SettingsPage = () => {
                   <div className="d-flex align-items-center justify-content-between flex-wrap gap-3">
                     <div>
                       <h6 className="fw-bold mb-1" style={{ fontSize: '0.9rem' }}>Force Refresh All?</h6>
-                      <p className="text-muted small mb-0">Re-generate all <strong>{localSource.toUpperCase()}</strong> cards based on new density.</p>
+                      <p className="text-muted small mb-0">
+                        Re-generate cards for <strong>{localSource === "all" ? "all sources (PDFs and Manual)" : localSource.toUpperCase()}</strong> based on new density.
+                      </p>
                     </div>
                     <div className="d-flex gap-2 align-items-center">
                       {isBulkGenerating && (
@@ -442,7 +509,7 @@ const SettingsPage = () => {
                         disabled={isBulkGenerating}
                         onClick={() => openModal({
                           title: "Force Refresh All?",
-                          message: `Warning: This will DELETE all existing cards for your ${localSource.toUpperCase()} subjects and recreate ${flashcardsPerChapter} cards per chapter. This cannot be undone.`,
+                          message: `Warning: This will DELETE all existing cards for your ${localSource === "all" ? "PDF and Manual" : localSource.toUpperCase()} subjects and recreate ${flashcardsPerChapter} cards per chapter. This cannot be undone.`,
                           onConfirm: () => handleBulkGenerate(true),
                           type: "danger",
                           confirmText: "Refresh All"
@@ -540,7 +607,7 @@ const SettingsPage = () => {
           {activeTab === "manual" && (
             <div className="animate-fade-in">
               <SettingsSection
-                title={<><i className="bi bi-keyboard-fill me-2" style={{ color: '#795548' }}></i>Manual Syllabus Constructor</>}
+                title={<><i className="bi bi-keyboard-fill me-1" style={{ color: '#795548' }}></i>Manual Syllabus Constructor</>}
                 description="Craft your study plan manually by defining chapters and key learning topics for the AI model to process."
               >
 
@@ -556,7 +623,7 @@ const SettingsPage = () => {
                         </span>
                         <input
                           type="text"
-                          className="form-control border-start-0 ps-0"
+                          className="form-control border-start-0 ps-2"
                           placeholder="e.g. Advanced Quantum Physics"
                           value={manualCourseParams.courseTitle}
                           onChange={(e) => setManualCourseParams({ ...manualCourseParams, courseTitle: e.target.value })}
@@ -577,7 +644,7 @@ const SettingsPage = () => {
                           </span>
                           <input
                             type="number"
-                            className="form-control border-start-0 ps-0"
+                            className="form-control border-start-0 ps-2"
                             min="1"
                             max="50"
                             value={manualCourseParams.numChapters}
@@ -586,20 +653,41 @@ const SettingsPage = () => {
                           />
                         </div>
                         <button
-                          className="btn d-flex align-items-center justify-content-center"
-                          onClick={handleGenerateChapterInputs}
+                          type="button"
+                          className="btn btn-outline-secondary d-flex align-items-center justify-content-center"
+                          onClick={handleAddChapter}
+                          disabled={manualChapters.length >= 50}
+                          aria-label="Add chapter"
+                          title="Add one chapter"
                           style={{
+                            width: '3rem',
                             height: '3rem',
                             borderRadius: '0.75rem',
-                            background: '#795548',
-                            color: 'white',
-                            fontWeight: '600',
-                            padding: '0 1.5rem',
-                            border: 'none',
-                            boxShadow: '0 4px 10px rgba(121, 85, 72, 0.2)'
+                            color: '#795548',
+                            borderColor: 'rgba(121, 85, 72, 0.35)',
+                            background: 'white',
+                            fontSize: '1.25rem',
                           }}
                         >
-                          <i className="bi bi-gear-fill me-2"></i> Setup
+                          <i className="bi bi-plus-lg"></i>
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-outline-secondary d-flex align-items-center justify-content-center"
+                          onClick={handleGenerateChapterInputs}
+                          aria-label="Set up chapter fields"
+                          title="Set up chapter fields"
+                          style={{
+                            width: '3rem',
+                            height: '3rem',
+                            borderRadius: '0.75rem',
+                            color: '#795548',
+                            borderColor: 'rgba(121, 85, 72, 0.35)',
+                            background: 'white',
+                            fontSize: '1.15rem',
+                          }}
+                        >
+                          <i className="bi bi-check-lg" aria-hidden="true"></i>
                         </button>
                       </div>
                     </div>
@@ -637,6 +725,16 @@ const SettingsPage = () => {
                         <span className="fw-bold mb-0" style={{ color: '#1e293b', fontSize: '0.95rem' }}>
                           Chapter {index + 1}
                         </span>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-danger ms-auto"
+                          onClick={() => handleRemoveChapter(chapter.id)}
+                          disabled={manualChapters.length <= 1}
+                          aria-label={`Delete chapter ${index + 1}`}
+                          title={manualChapters.length <= 1 ? "At least one chapter is required" : `Delete chapter ${index + 1}`}
+                        >
+                          <i className="bi bi-trash" aria-hidden="true"></i>
+                        </button>
                       </div>
 
                       <div className="row g-4">
@@ -652,7 +750,7 @@ const SettingsPage = () => {
                               </span>
                               <input
                                 type="text"
-                                className="form-control border-start-0 ps-0 fw-semibold"
+                                className="form-control border-start-0 ps-2 fw-semibold"
                                 placeholder={`e.g. Chapter ${index + 1}: Foundations of Physics`}
                                 value={chapter.name}
                                 onChange={(e) => handleManualChapterChange(chapter.id, 'name', e.target.value)}
@@ -672,7 +770,7 @@ const SettingsPage = () => {
                                 <i className="bi bi-list-task" style={{ color: '#795548' }}></i>
                               </span>
                               <textarea
-                                className="form-control border-start-0 ps-0"
+                                className="form-control border-start-0 ps-2"
                                 rows="3"
                                 placeholder="Type topics here, separated by commas..."
                                 value={chapter.topics}
@@ -697,7 +795,8 @@ const SettingsPage = () => {
                     onClick={handleSaveManualData}
                     style={{ fontSize: '1.05rem', letterSpacing: '0.3px', borderRadius: '12px' }}
                   >
-                    <i className="bi bi-check2-circle me-2"></i> Save Course Structure
+                    <i className={`bi ${editingCourseIndex !== null ? "bi-arrow-repeat" : "bi-check2-circle"} me-2`}></i>
+                    {editingCourseIndex !== null ? "Update Course Structure" : "Save Course Structure"}
                   </button>
                 </div>
               </SettingsSection>
@@ -709,6 +808,20 @@ const SettingsPage = () => {
             <div className="animate-fade-in">
               <SettingsSection title="Saved Courses" description="View and remove global study data. This data is available in the Quiz Generator auto-mode.">
                 <ul className="nav nav-tabs mb-4 border-0" style={{ gap: '10px' }}>
+                  <li className="nav-item">
+                    <button
+                      className="nav-link border-0 rounded-pill px-4 py-2"
+                      style={{
+                        background: manageTab === 'all' ? '#795548' : 'rgba(121, 85, 72, 0.05)',
+                        color: manageTab === 'all' ? 'white' : '#795548',
+                        fontWeight: '600',
+                        transition: '0.2s'
+                      }}
+                      onClick={() => setManageTab('all')}
+                    >
+                      <i className="bi bi-collection me-2"></i>All
+                    </button>
+                  </li>
                   <li className="nav-item">
                     <button
                       className="nav-link border-0 rounded-pill px-4 py-2"
@@ -739,66 +852,95 @@ const SettingsPage = () => {
                   </li>
                 </ul>
 
-                {syllabusData.filter(d => d.source === manageTab).length === 0 ? (
+                {managedCourses.length === 0 ? (
                   <div className="text-center p-5 text-muted">
                     <i className="bi bi-database-x fs-1 mb-3 d-block"></i>
-                    <p>No {manageTab === 'pdf' ? 'PDF' : 'manual'} study data saved yet.</p>
+                    <p>
+                      {manageTab === "all"
+                        ? "No study data saved yet."
+                        : `No ${manageTab === 'pdf' ? 'PDF' : 'manual'} study data saved yet.`}
+                    </p>
                   </div>
                 ) : (
                   <div className="row g-3">
-                    {syllabusData.map((course, index) => {
-                      if (course.source !== manageTab) return null;
+                    {managedCourses.map(({ course, index }) => {
+                      const courseSource = course.source === "pdf" ? "PDF Upload" : "Manual Entry";
                       return (
                         <div className="col-md-6" key={index}>
                           <div className="p-4 rounded h-100 position-relative animate-fade-in" style={{ background: 'white', border: '1px solid rgba(121, 85, 72, 0.1)', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
-                            <div className="position-absolute" style={{ top: '1rem', right: '1rem', display: 'flex', gap: '8px' }}>
-                              <button
-                                className="btn btn-sm"
-                                style={{
-                                  border: '1px solid #795548',
-                                  color: '#795548',
-                                  background: 'transparent',
-                                  transition: '0.2s'
-                                }}
-                                onClick={() => {
-                                  setEditingCourseIndex(index);
-                                  setManualCourseParams({ courseTitle: course.courseTitle, numChapters: course.chapters?.length || 1 });
-                                  setManualChapters(course.chapters?.length ? [...course.chapters] : [{ name: "", topics: "", id: 1 }]);
-                                  if (setActiveTab) setActiveTab('manual');
-                                }}
-                                title="Edit Course"
+                            <div className="d-flex align-items-start justify-content-between gap-2 mb-2">
+                              <h5
+                                className="fw-bold text-dark mb-0"
+                                style={{ color: 'var(--text-primary)', minWidth: 0, overflowWrap: 'anywhere' }}
                               >
-                                <i className="bi bi-pencil"></i>
-                              </button>
-                              <button
-                                className="btn btn-sm btn-outline-danger"
-                                onClick={() => {
-                                  openModal({
-                                    title: "Delete Course",
-                                    message: `Are you sure you want to delete this course from ${manageTab}? This action cannot be undone.`,
-                                    type: "danger",
-                                    confirmText: "Delete Course",
-                                    onConfirm: () => {
-                                      removeSyllabusData(index);
-                                      toast.success('Removed course.');
-                                      closeModal();
-                                    }
-                                  });
-                                }}
-                                title="Delete Course"
-                              >
-                                <i className="bi bi-trash"></i>
-                              </button>
+                                {course.courseTitle}
+                              </h5>
+                              <div className="d-flex gap-2 flex-shrink-0">
+                                <button
+                                  className="btn btn-sm"
+                                  style={{
+                                    border: '1px solid #795548',
+                                    color: '#795548',
+                                    background: 'transparent',
+                                    transition: '0.2s'
+                                  }}
+                                  onClick={() => {
+                                    setEditingCourseIndex(index);
+                                    setManualCourseParams({ courseTitle: course.courseTitle, numChapters: course.chapters?.length || 1 });
+                                    setManualChapters(course.chapters?.length ? [...course.chapters] : [{ name: "", topics: "", id: 1 }]);
+                                    if (setActiveTab) setActiveTab('manual');
+                                  }}
+                                  title="Edit Course"
+                                >
+                                  <i className="bi bi-pencil"></i>
+                                </button>
+                                <button
+                                  className="btn btn-sm btn-outline-danger"
+                                  onClick={() => {
+                                    openModal({
+                                      title: "Delete Course",
+                                      message: `Are you sure you want to delete this course from ${courseSource}? This action cannot be undone.`,
+                                      type: "danger",
+                                      confirmText: "Delete Course",
+                                      onConfirm: () => {
+                                        removeSyllabusData(index);
+                                        toast.success('Removed course.');
+                                        closeModal();
+                                      }
+                                    });
+                                  }}
+                                  title="Delete Course"
+                                >
+                                  <i className="bi bi-trash"></i>
+                                </button>
+                              </div>
                             </div>
-                            <h5 className="fw-bold text-dark pe-5" style={{ color: 'var(--text-primary)' }}>{course.courseTitle}</h5>
+                            {manageTab === "all" && (
+                              <div
+                                className="small mb-2"
+                                style={{ color: '#8d6e63', fontWeight: 600, fontSize: '0.75rem' }}
+                              >
+                                <i className={`bi ${course.source === "pdf" ? "bi-file-earmark-pdf" : "bi-keyboard"} me-1`}></i>
+                                {courseSource}
+                              </div>
+                            )}
                             <p className="text-muted small mb-3">
                               {course.chapters?.length || 0} Chapters Available
                             </p>
+                            <div
+                              aria-hidden="true"
+                              style={{
+                                height: "1px",
+                                margin: "-0.5rem 0 0.75rem",
+                                background: "linear-gradient(to right, transparent 0%, rgba(121, 85, 72, 0.3) 50%, transparent 100%)",
+                              }}
+                            />
                             <div style={{ maxHeight: '120px', overflowY: 'auto' }} className="pe-2 custom-scrollbar">
                               {course.chapters?.map((ch, i) => (
                                 <div key={i} className="mb-2">
-                                  <span className="badge bg-secondary me-2">Ch {ch.id || i + 1}</span>
-                                  <span className="text-dark small" style={{ color: 'var(--text-primary)' }}>{ch.name}</span>
+                                  <span className="text-dark small" style={{ color: 'var(--text-primary)' }}>
+                                    {i + 1}. {ch.name}
+                                  </span>
                                 </div>
                               ))}
                             </div>
@@ -810,12 +952,16 @@ const SettingsPage = () => {
                       <button className="btn btn-outline-danger" onClick={() => {
                         openModal({
                           title: "Clear All Data",
-                          message: `Are you sure you want to wipe all ${manageTab} data? This action cannot be undone.`,
+                          message: `Are you sure you want to wipe ${manageTabLabel} study data? This action cannot be undone.`,
                           type: "danger",
                           confirmText: "Clear All",
                           onConfirm: () => {
-                            clearSyllabusData();
-                            toast.success('All data wiped.');
+                            clearSyllabusData(manageTab === "all" ? undefined : manageTab);
+                            toast.success(
+                              manageTab === "all"
+                                ? "All study data wiped."
+                                : `${manageTab === "pdf" ? "PDF" : "Manual"} study data wiped.`,
+                            );
                             closeModal();
                           }
                         });

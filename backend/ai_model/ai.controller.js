@@ -138,6 +138,14 @@ const generateFlashcardsBulk = async (req, res) => {
         if (!syllabusData || !Array.isArray(syllabusData)) {
             return res.status(400).json({ success: false, message: "Invalid syllabus data" });
         }
+        if (!["all", "pdf", "manual"].includes(source)) {
+            return res.status(400).json({ success: false, message: "Invalid flashcard source" });
+        }
+
+        const cardsPerChapter = Number.parseInt(count, 10);
+        if (!Number.isInteger(cardsPerChapter) || cardsPerChapter < 1 || cardsPerChapter > 50) {
+            return res.status(400).json({ success: false, message: "Cards per chapter must be between 1 and 50" });
+        }
 
         let chaptersProcessed = 0;
         let chaptersSkipped = 0;
@@ -149,62 +157,121 @@ const generateFlashcardsBulk = async (req, res) => {
         const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
         for (const course of syllabusData) {
-            if (course.source !== source) continue;
+            if (source !== "all" && course.source !== source) continue;
 
             if (!course.chapters || !Array.isArray(course.chapters)) continue;
 
             for (const chapter of course.chapters) {
                 // Skip chapters with no name or topics
-                if (!chapter.name || !chapter.topics) {
+                if (typeof chapter.name !== "string" || !chapter.name.trim() ||
+                    !(typeof chapter.topics === "string" ? chapter.topics.trim() : chapter.topics)) {
                     console.log(`[Flashcard] Skipping empty chapter in ${course.courseTitle}`);
                     chaptersSkipped++;
                     continue;
                 }
 
                 try {
-                    // Check if cards already exist
-                    const existing = await Flashcard.count({
-                        where: { userId, subject: course.courseTitle, chapter: chapter.name }
+                    const existingCards = await Flashcard.findAll({
+                        where: {
+                            userId,
+                            subject: course.courseTitle,
+                            chapter: chapter.name,
+                            source: course.source,
+                        },
+                        attributes: ["id", "question"],
                     });
+                    const cardsNeeded = force
+                        ? cardsPerChapter
+                        : Math.max(0, cardsPerChapter - existingCards.length);
 
-                    // If force refresh, delete existing cards first
-                    if (force && existing > 0) {
-                        await Flashcard.destroy({
-                            where: { userId, subject: course.courseTitle, chapter: chapter.name }
-                        });
-                        console.log(`[Flashcard] Force: deleted ${existing} existing cards for ${chapter.name}`);
-                    } else if (existing > 0) {
-                        // Sync mode: skip existing
-                        console.log(`[Flashcard] Skipping ${chapter.name} (${existing} cards exist)`);
+                    if (cardsNeeded === 0) {
+                        console.log(`[Flashcard] Skipping ${chapter.name} (${existingCards.length} cards already meet the requested count)`);
                         chaptersSkipped++;
                         continue;
                     }
 
                     console.log(`[Flashcard] Generating for: ${course.courseTitle} > ${chapter.name}`);
 
-                    const prompt = buildFlashcardPrompt({
-                        subject: course.courseTitle,
-                        topic: chapter.topics,
-                        count: count || 5
-                    });
+                    const generatedCards = [];
+                    const knownQuestions = new Set(
+                        (force ? [] : existingCards)
+                            .map((card) => card.question.trim().toLocaleLowerCase()),
+                    );
+                    const maxAttempts = 3;
 
-                    const { text } = await generateAiContent(prompt, { json: true });
-                    const parsed = parseAiJson(text);
-                    const cards = validateFlashcards(parsed);
+                    for (let attempt = 0; attempt < maxAttempts && generatedCards.length < cardsNeeded; attempt++) {
+                        const remaining = cardsNeeded - generatedCards.length;
+                        const prompt = `${buildFlashcardPrompt({
+                            subject: course.courseTitle,
+                            topic: chapter.topics,
+                            count: remaining,
+                        })}
 
-                    await Promise.all(cards.map(c => Flashcard.create({
-                        question: c.front,
-                        answer: c.back,
+Chapter: ${chapter.name}
+Return exactly ${remaining} unique cards. Do not repeat these existing questions:
+${Array.from(knownQuestions).map((question) => `- ${question}`).join("\n") || "- None"}
+
+Use JSON objects with "front" and "back" fields.`;
+
+                        const { text } = await generateAiContent(prompt, { json: true });
+                        const parsed = parseAiJson(text);
+                        if (!Array.isArray(parsed)) {
+                            throw new Error("AI response must be a JSON array");
+                        }
+
+                        for (const item of parsed) {
+                            const front = item.front ?? item.question;
+                            const back = item.back ?? item.answer;
+                            if (typeof front !== "string" || !front.trim() ||
+                                typeof back !== "string" || !back.trim()) {
+                                continue;
+                            }
+                            const normalizedQuestion = front.trim().toLocaleLowerCase();
+                            if (knownQuestions.has(normalizedQuestion)) continue;
+                            knownQuestions.add(normalizedQuestion);
+                            generatedCards.push({ front: front.trim(), back: back.trim() });
+                            if (generatedCards.length === cardsNeeded) break;
+                        }
+
+                        if (generatedCards.length < cardsNeeded && attempt < maxAttempts - 1) {
+                            await delay(500);
+                        }
+                    }
+
+                    if (generatedCards.length < cardsNeeded && force) {
+                        throw new Error(`AI returned ${generatedCards.length} of ${cardsNeeded} requested cards after ${maxAttempts} attempts; existing cards were preserved.`);
+                    }
+
+                    if (force) {
+                        await Flashcard.destroy({
+                            where: {
+                                userId,
+                                subject: course.courseTitle,
+                                chapter: chapter.name,
+                                source: course.source,
+                            }
+                        });
+                    }
+
+                    const cardsToSave = generatedCards.slice(0, cardsNeeded);
+                    await Promise.all(cardsToSave.map((card) => Flashcard.create({
+                        question: card.front,
+                        answer: card.back,
                         subject: course.courseTitle,
                         chapter: chapter.name,
                         topic: chapter.topics || "General",
-                        source: source,
+                        source: course.source,
                         userId
                     })));
 
                     chaptersProcessed++;
-                    cardsCreated += cards.length;
-                    console.log(`[Flashcard] ✓ Created ${cards.length} cards for ${chapter.name}`);
+                    cardsCreated += cardsToSave.length;
+                    console.log(`[Flashcard] ✓ Created ${cardsToSave.length} cards for ${chapter.name}`);
+
+                    if (generatedCards.length < cardsNeeded) {
+                        chaptersFailed++;
+                        errors.push(`${course.courseTitle} > ${chapter.name}: Generated ${generatedCards.length} of ${cardsNeeded} missing cards after ${maxAttempts} attempts.`);
+                    }
 
                     // Small delay to let LM Studio breathe between chapters
                     await delay(1000);
@@ -220,8 +287,6 @@ const generateFlashcardsBulk = async (req, res) => {
             }
         }
 
-        const totalAttempted = chaptersProcessed + chaptersSkipped + chaptersFailed;
-
         if (chaptersProcessed === 0 && chaptersFailed > 0) {
             return res.status(200).json({
                 success: false,
@@ -232,8 +297,8 @@ const generateFlashcardsBulk = async (req, res) => {
 
         const action = force ? "Regenerated" : "Synced";
         return res.status(200).json({
-            success: true,
-            message: `${action} ${chaptersProcessed} chapters, created ${cardsCreated} flashcards.${chaptersFailed > 0 ? ` (${chaptersFailed} chapters failed)` : ''}`,
+            success: chaptersFailed === 0,
+            message: `${action} ${chaptersProcessed} chapters, created ${cardsCreated} flashcards.${chaptersSkipped > 0 ? ` ${chaptersSkipped} chapters already meet the requested count.` : ''}${chaptersFailed > 0 ? ` ${chaptersFailed} chapters need another attempt.` : ''}`,
             details: { chaptersProcessed, chaptersSkipped, chaptersFailed, cardsCreated, errors }
         });
 

@@ -3,7 +3,9 @@ import { Link, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import { AuthContext } from "../context/AuthContext";
 import api from "../services/api";
+import getLocalDateKey from "../utils/dateKey";
 import { useNotifications } from "../context/NotificationContext";
+import "./AuthPages.css";
 
 const SignupPage = () => {
   const { login } = useContext(AuthContext);
@@ -54,6 +56,7 @@ const SignupPage = () => {
       formDataToSend.append("lastName", formData.lastName);
       formDataToSend.append("email", formData.email);
       formDataToSend.append("password", formData.password);
+      formDataToSend.append("loginDate", getLocalDateKey());
       if (formData.phone) formDataToSend.append("phone", formData.phone);
       if (formData.location) formDataToSend.append("location", formData.location);
 
@@ -84,13 +87,12 @@ const SignupPage = () => {
 
   return (
     <div
-      className="d-flex align-items-center justify-content-center min-vh-100"
+      className="auth-page auth-signup-page d-flex align-items-center justify-content-center"
       style={{
         background:
           "linear-gradient(135deg, #fdfbfb 0%, #ebedee 50%, #f4f1ee 100%)",
         position: "relative",
-        overflow: "hidden",
-        padding: "2rem 0",
+        overflowX: "hidden",
       }}
     >
       {/* Background Decorations */}
@@ -119,11 +121,11 @@ const SignupPage = () => {
         }}
       ></div>
 
-      <div className="container" style={{ position: "relative", zIndex: 1 }}>
+      <div className="container auth-page-container" style={{ position: "relative", zIndex: 1 }}>
         <div className="row justify-content-center">
-          <div className="col-lg-10">
+          <div className="col-12">
             <div
-              className="card animate-fade-in"
+              className="card auth-card auth-signup-card animate-fade-in"
               style={{
                 background: "rgba(255, 255, 255, 0.98)",
                 backdropFilter: "blur(20px)",
@@ -136,12 +138,11 @@ const SignupPage = () => {
               <div className="row g-0">
                 {/* Left Side - Branding */}
                 <div
-                  className="col-lg-5 d-none d-lg-block"
+                  className="col-lg-4 d-none d-lg-flex auth-brand-panel"
                   style={{
                     background:
                       "linear-gradient(135deg, #a1887f 0%, #795548 100%)",
                     padding: "3rem",
-                    display: "flex",
                     flexDirection: "column",
                     justifyContent: "center",
                   }}
@@ -194,7 +195,7 @@ const SignupPage = () => {
                 </div>
 
                 {/* Right Side - Form */}
-                <div className="col-lg-7" style={{ padding: "2.5rem" }}>
+                <div className="col-12 col-lg-8 auth-signup-form-panel" style={{ padding: "2.5rem" }}>
                   <div className="mb-4">
                     <h2 className="fw-bold mb-0" style={{ color: "#1e293b", fontSize: '1.25rem' }}>
                       Create Account
@@ -251,7 +252,7 @@ const SignupPage = () => {
 
                     {/* Name Fields */}
                     <div className="row mb-3">
-                      <div className="col-6">
+                      <div className="col-12 col-sm-6">
                         <label
                           className="form-label"
                           style={{ color: "#475569", fontWeight: 500 }}
@@ -275,7 +276,7 @@ const SignupPage = () => {
                           }}
                         />
                       </div>
-                      <div className="col-6">
+                      <div className="col-12 col-sm-6">
                         <label
                           className="form-label"
                           style={{ color: "#475569", fontWeight: 500 }}
@@ -329,7 +330,7 @@ const SignupPage = () => {
 
                     {/* Extended Info (Optional) */}
                     <div className="row mb-3">
-                      <div className="col-6">
+                      <div className="col-12 col-sm-6">
                         <label
                           className="form-label"
                           style={{ color: "#475569", fontWeight: 500 }}
@@ -351,7 +352,7 @@ const SignupPage = () => {
                           }}
                         />
                       </div>
-                      <div className="col-6">
+                      <div className="col-12 col-sm-6">
                         <label
                           className="form-label"
                           style={{ color: "#475569", fontWeight: 500 }}
@@ -377,7 +378,7 @@ const SignupPage = () => {
 
                     {/* Password Fields */}
                     <div className="row mb-3">
-                      <div className="col-6">
+                      <div className="col-12 col-sm-6">
                         <label
                           className="form-label"
                           style={{ color: "#475569", fontWeight: 500 }}
@@ -413,7 +414,7 @@ const SignupPage = () => {
                           ></i>
                         </div>
                       </div>
-                      <div className="col-6">
+                      <div className="col-12 col-sm-6">
                         <label
                           className="form-label"
                           style={{ color: "#475569", fontWeight: 500 }}

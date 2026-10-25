@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect } from "react";
+import React, { useContext } from "react";
 import { MusicContext } from "../context/MusicContext";
 import { SettingsContext } from "../context/SettingsContext";
 
@@ -7,10 +7,13 @@ const MusicPlayer = () => {
   const {
     isPlaying,
     volume,
-    setVolume,
+    changeVolume,
     current,
     progress,
     currentTime,
+    duration,
+    seekTo,
+    seekBy,
     shuffle,
     setShuffle,
     repeat,
@@ -25,14 +28,9 @@ const MusicPlayer = () => {
     hasStarted,
   } = useContext(MusicContext);
 
-  const [activeCategory, setActiveCategory] = useState(musicSettings.lastVibe || "all");
-
-  useEffect(() => {
-    setActiveCategory(musicSettings.lastVibe || "all");
-  }, [musicSettings.lastVibe]);
+  const activeCategory = musicSettings.lastVibe || "all";
 
   const handleCategoryChange = (catId) => {
-    setActiveCategory(catId);
     updateMusicSettings({ lastVibe: catId });
   };
 
@@ -45,6 +43,14 @@ const MusicPlayer = () => {
   ];
 
   const currentTrack = hasStarted && current !== null ? tracks[current] : tracks[0];
+  const trackDuration =
+    duration ||
+    (() => {
+      const [minutes, seconds] = (currentTrack?.duration || "0:00").split(":").map(Number);
+      return minutes * 60 + seconds;
+    })();
+  const formatTime = (time) =>
+    `${Math.floor(time / 60)}:${Math.floor(time % 60).toString().padStart(2, "0")}`;
 
   return (
     <div className="d-flex flex-column h-100">
@@ -78,14 +84,14 @@ const MusicPlayer = () => {
                   {currentTrack.artist}
                 </p>
                 <span className="badge bg-light text-muted fw-normal" style={{ fontSize: "0.75rem" }}>
-                  {currentTrack.duration}
+                  {formatTime(trackDuration)}
                 </span>
               </div>
             </div>
           </div>
 
           {/* Controls */}
-          <div className="col-md-4 text-center">
+          <div className="col-md-5 text-center">
             <div className="d-flex justify-content-center align-items-center gap-3 mb-3">
               <button
                 className="btn btn-link p-0 text-muted"
@@ -109,35 +115,58 @@ const MusicPlayer = () => {
               </button>
               <button
                 className="btn btn-link p-0 text-muted"
-                onClick={() => setRepeat(repeat === "all" ? "none" : "all")}
+                onClick={() =>
+                  setRepeat(
+                    repeat === "none" ? "all" : repeat === "all" ? "one" : "none",
+                  )
+                }
+                title={`Repeat ${repeat}`}
                 style={{ color: repeat !== "none" ? "var(--primary)" : "" }}
               >
-                <i className={`bi ${repeat === "all" ? "bi-repeat-1" : "bi-repeat"} fs-5`}></i>
+                <i className={`bi ${repeat === "one" ? "bi-repeat-1" : "bi-repeat"} fs-5`}></i>
               </button>
             </div>
 
             {/* Progress Bar */}
             <div className="d-flex align-items-center gap-2 px-3">
               <span className="text-muted small" style={{ width: "35px" }}>
-                {Math.floor(currentTime / 60)}:{(Math.floor(currentTime % 60)).toString().padStart(2, '0')}
+                {formatTime(currentTime)}
               </span>
-              <div className="progress flex-grow-1" style={{ height: "6px", background: "#f0f0f0" }}>
-                <div
-                  className="progress-bar"
-                  style={{
-                    width: `${progress}%`,
-                    background: "var(--gradient-primary)",
-                  }}
-                ></div>
-              </div>
+              <button
+                className="btn btn-link p-0 text-muted music-seek-button"
+                onClick={() => seekBy(-10)}
+                aria-label="Back 10 seconds"
+                title="Back 10 seconds"
+              >
+                <i className="bi bi-rewind-fill"></i>
+              </button>
+              <input
+                aria-label="Seek music"
+                className="music-seek-range flex-grow-1"
+                type="range"
+                min="0"
+                max={trackDuration || 1}
+                step="0.5"
+                value={Math.min(currentTime, trackDuration || currentTime)}
+                onChange={(event) => seekTo(Number(event.target.value))}
+                style={{ "--music-progress": `${progress}%` }}
+              />
+              <button
+                className="btn btn-link p-0 text-muted music-seek-button"
+                onClick={() => seekBy(10)}
+                aria-label="Forward 10 seconds"
+                title="Forward 10 seconds"
+              >
+                <i className="bi bi-fast-forward-fill"></i>
+              </button>
               <span className="text-muted small" style={{ width: "35px" }}>
-                {currentTrack.duration}
+                {formatTime(trackDuration)}
               </span>
             </div>
           </div>
 
           {/* Volume */}
-          <div className="col-md-4">
+          <div className="col-md-3">
             <div className="d-flex align-items-center justify-content-end gap-3 pe-3">
               <button 
                 className="btn btn-link p-0 text-muted" 
@@ -150,10 +179,10 @@ const MusicPlayer = () => {
                 type="range"
                 value={isMuted ? 0 : volume}
                 onChange={(e) => {
-                  setVolume(e.target.value);
+                  changeVolume(e.target.value);
                   if (isMuted) setIsMuted(false);
                 }}
-                className="form-range"
+                className="form-range music-volume-range"
                 style={{ width: "100px", accentColor: "#795548" }}
               />
               <i className="bi bi-volume-up-fill text-muted fs-4"></i>

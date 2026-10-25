@@ -1,12 +1,18 @@
 const express = require("express");
 const router = express.Router();
 
+const fs = require("fs");
+const path = require("path");
 const multer = require("multer");
 
+const uploadsDirectory = path.resolve(__dirname, "..", "uploads");
+fs.mkdirSync(uploadsDirectory, { recursive: true });
+
 const storage = multer.diskStorage({
-  destination: "uploads/",
+  destination: uploadsDirectory,
   filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
+    const extension = path.extname(file.originalname).toLowerCase();
+    cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}${extension}`);
   },
 });
 

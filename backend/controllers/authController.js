@@ -1,6 +1,7 @@
 const { validationResult } = require("express-validator");
 const { User } = require("../models");
 const generateToken = require("../utils/generateToken");
+const { recordLoginStreak } = require("../utils/loginStreak");
 
 const registerUser = async (req, res, next) => {
   try {
@@ -39,6 +40,8 @@ const registerUser = async (req, res, next) => {
     }
 
     const user = await User.create(userData);
+    user.settings = recordLoginStreak(user.settings, req.body.loginDate);
+    await user.save();
 
     return res.status(201).json({
       success: true,
@@ -49,6 +52,7 @@ const registerUser = async (req, res, next) => {
         lastName: user.lastName,
         email: user.email,
         avatar: user.avatar,
+        loginStreak: user.settings.loginStreak,
         token: generateToken(user.id),
       },
     });
@@ -80,6 +84,9 @@ const loginUser = async (req, res, next) => {
       });
     }
 
+    user.settings = recordLoginStreak(user.settings, req.body.loginDate);
+    await user.save();
+
     return res.status(200).json({
       success: true,
       message: "Login successful",
@@ -89,6 +96,8 @@ const loginUser = async (req, res, next) => {
         lastName: user.lastName,
         email: user.email,
         avatar: user.avatar,
+        loginStreak: user.settings.loginStreak,
+        settings: user.settings,
         token: generateToken(user.id),
       },
     });
@@ -123,7 +132,10 @@ const getMe = async (req, res, next) => {
   try {
     return res.status(200).json({
       success: true,
-      data: req.user,
+      data: {
+        ...req.user.toJSON(),
+        loginStreak: Math.max(0, Number(req.user.settings?.loginStreak) || 0),
+      },
     });
   } catch (error) {
     next(error);
@@ -151,6 +163,8 @@ const updateProfile = async (req, res, next) => {
 
     if (req.file) {
       user.avatar = `/uploads/${req.file.filename}`;
+    } else if (req.body.removeAvatar === "true") {
+      user.avatar = null;
     }
 
     await user.save();

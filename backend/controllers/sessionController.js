@@ -1,4 +1,5 @@
 const { StudySession } = require("../models");
+const { Op } = require("sequelize");
 
 // @desc    Record a completed study session
 // @route   POST /api/sessions
@@ -22,15 +23,17 @@ exports.createSession = async (req, res) => {
   }
 };
 
-// @desc    Get user study statistics (past 7 days)
+// @desc    Get all focus sessions for user study statistics
 // @route   GET /api/sessions/stats
 // @access  Private
 exports.getStats = async (req, res) => {
   try {
     const sessions = await StudySession.findAll({
-      where: { userId: req.user.id },
+      where: {
+        userId: req.user.id,
+        mode: { [Op.notIn]: ["break", "short_break", "long_break"] },
+      },
       order: [['startTime', 'DESC']],
-      limit: 50 // Get last 50 sessions for history
     });
     
     res.json({ success: true, data: sessions });
