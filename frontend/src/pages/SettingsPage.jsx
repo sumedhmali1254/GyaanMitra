@@ -556,25 +556,37 @@ const SettingsPage = () => {
                     onChange={handleFileChange}
                   />
 
-                  <button
-                    className="btn btn-outline-primary px-4"
-                    onClick={() => fileInputRef.current.click()}
-                  >
-                    Browse Files
-                  </button>
+                  <div className="d-flex justify-content-center align-items-center flex-wrap gap-3">
+                    <button
+                      className="btn btn-outline-primary px-4"
+                      onClick={() => fileInputRef.current.click()}
+                      style={{ width: '200px', maxWidth: '100%', minHeight: '34px', paddingTop: '0.35rem', paddingBottom: '0.35rem' }}
+                    >
+                      Browse Files
+                    </button>
 
-                  {selectedFile && (
-                    <div className="mt-4 p-3 rounded" style={{ background: 'var(--bg-card)', border: '1px solid #e2e8f0', display: 'inline-block', textAlign: 'left' }}>
-                      <div className="d-flex align-items-center">
-                        <i className="bi bi-file-earmark-pdf-fill text-danger fs-4 me-3"></i>
-                        <div>
-                          <div className="fw-bold" style={{ fontSize: '0.9rem', color: 'var(--text-primary)' }}>{selectedFile.name}</div>
-                          <div className="text-muted" style={{ fontSize: '0.75rem' }}>{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</div>
+                    {selectedFile && (
+                      <div className="rounded px-2 py-1" style={{ background: 'var(--bg-card)', border: '1px solid #e2e8f0', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', width: '200px', minHeight: '34px', maxWidth: '100%', boxSizing: 'border-box', textAlign: 'left' }}>
+                        <i className="bi bi-file-earmark-pdf-fill text-danger" style={{ fontSize: '1.2rem', flexShrink: 0 }}></i>
+                        <div style={{ minWidth: 0 }}>
+                          <div className="fw-bold text-truncate" style={{ fontSize: '0.82rem', color: 'var(--text-primary)' }}>{selectedFile.name}</div>
+                          <div className="text-muted" style={{ fontSize: '0.7rem' }}>{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</div>
                         </div>
-                        <i className="bi bi-x ms-4 cursor-pointer text-muted" onClick={() => setSelectedFile(null)}></i>
+                        <button
+                          type="button"
+                          aria-label="Remove selected file"
+                          className="btn p-0 text-muted"
+                          onClick={() => {
+                            setSelectedFile(null);
+                            if (fileInputRef.current) fileInputRef.current.value = "";
+                          }}
+                          style={{ lineHeight: 1, flexShrink: 0 }}
+                        >
+                          <i className="bi bi-x"></i>
+                        </button>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
                 </div>
 

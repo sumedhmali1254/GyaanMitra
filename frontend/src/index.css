@@ -424,14 +424,25 @@ body {
   padding: 1rem 0.75rem;
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(121, 85, 72, 0.12) transparent;
 }
 
 .sidebar-nav::-webkit-scrollbar {
   width: 4px;
 }
 
+.sidebar-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .sidebar-nav::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: rgba(121, 85, 72, 0.12);
+  border-radius: 4px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb:hover {
+  background: rgba(121, 85, 72, 0.2);
 }
 
 .sidebar-link {
