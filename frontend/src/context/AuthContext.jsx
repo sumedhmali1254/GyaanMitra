@@ -38,12 +38,19 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     let savedMusicState = null;
+    let savedQuizHistory = null;
+    const currentUserId = user?.id || user?._id;
     try {
       savedMusicState = JSON.parse(
         localStorage.getItem("gyaanmitra_music_state") || "null",
       );
+      if (currentUserId) {
+        savedQuizHistory = localStorage.getItem(
+          `gyaanmitra_quiz_history_${currentUserId}`,
+        );
+      }
     } catch (error) {
-      console.error("Unable to preserve music state during logout:", error);
+      console.error("Unable to preserve app state during logout:", error);
     }
     if (savedMusicState) {
       savedMusicState.isPlaying = false;
@@ -56,6 +63,12 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem(
         "gyaanmitra_music_state",
         JSON.stringify(savedMusicState),
+      );
+    }
+    if (savedQuizHistory && currentUserId) {
+      localStorage.setItem(
+        `gyaanmitra_quiz_history_${currentUserId}`,
+        savedQuizHistory,
       );
     }
     setGuestSecondsRemaining(null);

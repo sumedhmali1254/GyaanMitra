@@ -10,5 +10,6 @@ router.use(protect);
 router.post("/generate", quizController.generateQuiz);
 router.post("/result", quizResultController.saveQuizResult);
 router.get("/stats", quizResultController.getQuizStats);
+router.delete("/result/:id", quizResultController.deleteQuizResult);
 
 module.exports = router;

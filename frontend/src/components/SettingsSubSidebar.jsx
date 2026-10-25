@@ -131,7 +131,7 @@ const SettingsSubSidebar = () => {
           </div>
         </div>
         
-        {/* LM Studio Connection Status */}
+        {/* Study assistant connection status */}
         <div className="sub-sidebar-footer">
           <div 
             className="p-3"
@@ -171,7 +171,7 @@ const SettingsSubSidebar = () => {
                 />
               </div>
               <div>
-                <div className="fw-bold" style={{ fontSize: '0.85rem', color: '#1e293b' }}>LM Studio</div>
+                <div className="fw-bold" style={{ fontSize: '0.85rem', color: '#1e293b' }}>COMPANION</div>
                 <div style={{ 
                   fontSize: '0.72rem', 
                   fontWeight: 600, 

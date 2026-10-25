@@ -144,11 +144,6 @@ const Sidebar = ({ isOpen, isExpanded, onClose, onToggle }) => {
                     ? `${user.firstName} ${user.lastName}`
                     : user?.firstName || "User"}
                 </div>
-                <div className="sidebar-user-role">
-                  {user?.role === "premium" || user?.isPremium
-                    ? "Premium"
-                    : "Free"}
-                </div>
               </div>
             </div>
           </NavLink>

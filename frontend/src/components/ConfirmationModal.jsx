@@ -46,9 +46,9 @@ const ConfirmationModal = ({
           </button>
           <button 
             className={`btn btn-${type}-custom shadow-sm`} 
-            onClick={() => {
-              onConfirm();
-              onClose();
+            onClick={async () => {
+              const shouldClose = await onConfirm();
+              if (shouldClose !== false) onClose();
             }}
             style={{ borderRadius: '14px', padding: '0.75rem 1.5rem', fontWeight: '700', minWidth: '120px' }}
           >

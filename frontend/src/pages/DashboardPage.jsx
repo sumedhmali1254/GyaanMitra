@@ -494,16 +494,13 @@ const DashboardPage = () => {
                     "Study Hours This Month"}
               </h5>
               <select
-                className="form-select"
+                className="form-select dashboard-filter-select"
                 value={studyPeriod}
                 onChange={(e) => setStudyPeriod(e.target.value)}
                 style={{
                   width: "auto",
-                  background: "var(--bg-secondary)",
-                  border: "1px solid #e2e8f0",
                   fontSize: "0.875rem",
                   fontWeight: "500",
-                  borderRadius: "var(--radius-md)"
                 }}
               >
                 <option value="week">This Week</option>
@@ -550,12 +547,9 @@ const DashboardPage = () => {
                   <div key={idx} className="col-12 col-md-6 col-lg-3">
                     <div
                       className="p-3 d-flex align-items-center"
-                      style={{ background: "var(--bg-secondary)", borderRadius: "var(--radius-lg)", border: "1px solid var(--border-color)" }}
+                      style={{ background: "var(--bg-secondary)", borderRadius: "var(--radius-lg)", border: "1px solid #d6d3d1" }}
                     >
-                      <div className="rounded-circle d-flex align-items-center justify-content-center me-3" style={{ width: "40px", height: "40px", background: "rgba(121, 85, 72, 0.1)", color: "var(--primary)" }}>
-                        <i className={`bi ${course.type === 'pdf' ? 'bi-file-earmark-pdf' : 'bi-journal-text'}`}></i>
-                      </div>
-                      <div style={{ overflow: "hidden" }}>
+                      <div style={{ overflow: "hidden", width: "100%" }}>
                         <div className="fw-bold text-truncate" style={{ fontSize: "0.95rem", color: "var(--text-primary)" }}>
                           {course.courseTitle || course.subject || "Untitled Course"}
                         </div>
@@ -586,10 +580,10 @@ const DashboardPage = () => {
               <h5 className="mb-0">Quiz Performance</h5>
               <div className="d-flex align-items-center gap-2 ms-auto">
                 <select
-                  className="form-select form-select-sm"
+                  className="form-select form-select-sm dashboard-filter-select"
                   value={selectedQuizCourse}
                   onChange={(e) => setSelectedQuizCourse(e.target.value)}
-                  style={{ width: 'auto', minWidth: '120px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '600', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}
+                  style={{ width: 'auto', minWidth: '120px', fontSize: '0.75rem', fontWeight: '600' }}
                 >
                   <option value="all">All Subjects</option>
                   {[...new Set(quizResults.map(r => r.courseTitle))].map(title => (
@@ -597,10 +591,10 @@ const DashboardPage = () => {
                   ))}
                 </select>
                 <select
-                  className="form-select form-select-sm"
+                  className="form-select form-select-sm dashboard-filter-select"
                   value={quizPeriod}
                   onChange={(e) => setQuizPeriod(e.target.value)}
-                  style={{ width: 'auto', minWidth: '100px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '600', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}
+                  style={{ width: 'auto', minWidth: '100px', fontSize: '0.75rem', fontWeight: '600' }}
                 >
                   <option value="day">Day</option>
                   <option value="week">Week</option>

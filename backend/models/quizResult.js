@@ -31,6 +31,16 @@ const QuizResult = sequelize.define("QuizResult", {
     type: DataTypes.STRING,
     defaultValue: "medium",
   },
+  questions: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    field: "quiz_questions",
+  },
+  selectedAnswers: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    field: "selected_answers",
+  },
   completedAt: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW,

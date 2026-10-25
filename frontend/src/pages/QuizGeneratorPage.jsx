@@ -4,7 +4,25 @@ import { useSettings } from '../context/SettingsContext';
 import { AuthContext } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import api from "../services/api";
+import ConfirmationModal from "../components/ConfirmationModal";
 import './QuizGeneratorPage.css';
+
+const getQuizSubjectName = (item) => {
+  const savedName = item.courseTitle || item.course_title || item.subject;
+  if (savedName && savedName.toLowerCase() !== "unknown subject") {
+    return savedName;
+  }
+
+  const chapterSubjects = (Array.isArray(item.questions) ? item.questions : [])
+    .map((question) => {
+      const chapterSource = question.chapterSource || "";
+      const separatorIndex = chapterSource.lastIndexOf(" - ");
+      return separatorIndex > 0 ? chapterSource.slice(0, separatorIndex).trim() : "";
+    })
+    .filter(Boolean);
+
+  return [...new Set(chapterSubjects)].join(", ") || "Quiz";
+};
 
 const QuizGeneratorPage = () => {
   const { syllabusData } = useSettings();
@@ -16,7 +34,7 @@ const QuizGeneratorPage = () => {
   const QUIZ_STATE_KEY = `gyaanmitra_quiz_state_${userId}`;
 
   // Source toggle
-  const [sourceFilter, setSourceFilter] = useState('manual');
+  const [sourceFilter, setSourceFilter] = useState('all');
   const [selectedSubjects, setSelectedSubjects] = useState([]);
   const [selectedChapters, setSelectedChapters] = useState([]);
 
@@ -25,6 +43,20 @@ const QuizGeneratorPage = () => {
   const [timePerQuestion, setTimePerQuestion] = useState('');
 
   const [questions, setQuestions] = useState([]);
+  const [quizSubjectTitle, setQuizSubjectTitle] = useState("");
+  const [serverQuizHistory, setServerQuizHistory] = useState([]);
+  const [lastQuizResultId, setLastQuizResultId] = useState(null);
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+  const [isDeletingReport, setIsDeletingReport] = useState(false);
+  const [localQuizHistory, setLocalQuizHistory] = useState(() => {
+    try {
+      const saved = localStorage.getItem(QUIZ_HISTORY_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch (error) {
+      console.error("Unable to load local quiz history:", error);
+      return [];
+    }
+  });
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState({});
   const [showResult, setShowResult] = useState(false);
@@ -40,15 +72,83 @@ const QuizGeneratorPage = () => {
   // Resume logic
   const [hasSavedState, setHasSavedState] = useState(false);
 
-  // Memory-cached quiz history for the current user
-  const quizHistory = useMemo(() => {
-    try {
-      const saved = localStorage.getItem(QUIZ_HISTORY_KEY);
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
+  useEffect(() => {
+    let isCurrent = true;
+
+    if (userId === "guest") {
+      setServerQuizHistory([]);
+      return () => {
+        isCurrent = false;
+      };
     }
-  }, [userId, QUIZ_HISTORY_KEY, showResult]); // refresh history when a quiz is submitted/showResult changes
+
+    api.get("/quiz/stats")
+      .then((response) => {
+        if (isCurrent && response.data.success) {
+          setServerQuizHistory(Array.isArray(response.data.data) ? response.data.data : []);
+        }
+      })
+      .catch((error) => {
+        console.error("Unable to load quiz history from the database:", error);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [userId, showHistory]);
+
+  const quizHistory = useMemo(() => {
+    const serverItems = serverQuizHistory.map((result) => {
+      const date = result.completedAt || result.createdAt || result.completed_at || result.created_at;
+      const subject = getQuizSubjectName(result);
+      const total = Number(result.totalQuestions ?? result.total_questions) || 0;
+      const score = Number(result.score) || 0;
+      const timestamp = new Date(date).getTime();
+      const localDetails = localQuizHistory.find((item) => {
+        const localDate = new Date(item.date || item.completedAt || item.createdAt).getTime();
+        const sameResult = item.resultId && result.id && item.resultId === result.id;
+        const sameResultDetails =
+          Number(item.score) === score &&
+          Number(item.total ?? item.totalQuestions) === total &&
+          Math.abs(timestamp - localDate) <= 5000;
+        return sameResult || sameResultDetails;
+      });
+
+      return {
+        ...localDetails,
+        id: result.id,
+        resultId: result.id,
+        date,
+        score,
+        total,
+        subject: subject === "Quiz" ? getQuizSubjectName(localDetails || {}) : subject,
+        questions: Array.isArray(result.questions) && result.questions.length > 0
+          ? result.questions
+          : localDetails?.questions || [],
+        selectedAnswers: result.selectedAnswers || localDetails?.selectedAnswers || {},
+      };
+    });
+
+    const unmatchedLocalItems = localQuizHistory.filter((item) =>
+      !serverItems.some((result) => {
+        if (item.resultId && result.resultId) return item.resultId === result.resultId;
+        const itemTime = new Date(item.date || item.completedAt || item.createdAt).getTime();
+        const resultTime = new Date(result.date).getTime();
+        return (
+          Number(item.score) === Number(result.score) &&
+          Number(item.total ?? item.totalQuestions) === Number(result.total) &&
+          Math.abs(itemTime - resultTime) <= 5000
+        );
+      }),
+    ).map((item) => ({
+      ...item,
+      subject: getQuizSubjectName(item),
+    }));
+
+    return [...serverItems, ...unmatchedLocalItems].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    );
+  }, [serverQuizHistory, localQuizHistory]);
 
   // Filter the syllabus globally based on the toggle source
   const filteredSyllabus = syllabusData.filter(s => {
@@ -70,13 +170,14 @@ const QuizGeneratorPage = () => {
         questions,
         currentQuestion,
         selectedAnswers,
-        timeRemaining
+        timeRemaining,
+        courseTitle: quizSubjectTitle,
       };
       localStorage.setItem(QUIZ_STATE_KEY, JSON.stringify(stateToSave));
     } else if (showResult) {
       localStorage.removeItem(QUIZ_STATE_KEY);
     }
-  }, [questions, currentQuestion, selectedAnswers, showResult, timeRemaining, userId, QUIZ_STATE_KEY]);
+  }, [questions, currentQuestion, selectedAnswers, showResult, timeRemaining, quizSubjectTitle, userId, QUIZ_STATE_KEY]);
 
 
   // Timer logic
@@ -110,6 +211,7 @@ const QuizGeneratorPage = () => {
       setCurrentQuestion(parsed.currentQuestion);
       setSelectedAnswers(parsed.selectedAnswers);
       setTimeRemaining(parsed.timeRemaining !== undefined ? parsed.timeRemaining : null);
+      setQuizSubjectTitle(parsed.courseTitle || "");
       setHasSavedState(false);
       toast.success('Quiz resumed!');
     }
@@ -208,6 +310,8 @@ const QuizGeneratorPage = () => {
     }
 
     setIsGenerating(true);
+    setQuizSubjectTitle(finalCourseTitle);
+    setLastQuizResultId(null);
     let tid = toast.loading('Generating AI Quiz with Qwen...');
     try {
       const response = await api.post('/quiz/generate-ai', {
@@ -287,16 +391,31 @@ const QuizGeneratorPage = () => {
       }
     });
 
-    const subjectNames = selectedSubjects.map(idx => filteredSyllabus[idx]?.courseTitle).join(', ') || 'Unknown Subject';
+    const subjectNames = quizSubjectTitle ||
+      Array.from(new Set(
+        questions
+          .flatMap((question) => (question.chapterSource || "").split("|"))
+          .map((chapterSource) => chapterSource.split(" - ")[0].trim())
+          .filter(Boolean),
+      )).join(", ") ||
+      selectedSubjects.map(idx => filteredSyllabus[idx]?.courseTitle).filter(Boolean).join(', ') ||
+      'Quiz';
 
     // 1. Save to Backend (New)
+    let resultId = null;
     try {
-      await api.post("/quiz/result", {
+      const response = await api.post("/quiz/result", {
         courseTitle: subjectNames,
         score: correct,
         totalQuestions: questions.length,
-        difficulty: level
+        difficulty: level,
+        questions,
+        selectedAnswers,
       });
+      resultId = response.data?.data?.id || null;
+      if (response.data?.data) {
+        setServerQuizHistory((previous) => [response.data.data, ...previous]);
+      }
     } catch (err) {
       console.error("Failed to save quiz result to backend:", err);
       toast.error("Cloud sync failed, results saved locally.");
@@ -309,10 +428,13 @@ const QuizGeneratorPage = () => {
       total: questions.length,
       subject: subjectNames,
       questions: questions,
-      selectedAnswers: selectedAnswers
+      selectedAnswers: selectedAnswers,
+      resultId,
     };
-    const pastHistory = JSON.parse(localStorage.getItem(QUIZ_HISTORY_KEY) || '[]');
-    localStorage.setItem(QUIZ_HISTORY_KEY, JSON.stringify([historyItem, ...pastHistory]));
+    setLastQuizResultId(resultId);
+    const nextHistory = [historyItem, ...localQuizHistory];
+    setLocalQuizHistory(nextHistory);
+    localStorage.setItem(QUIZ_HISTORY_KEY, JSON.stringify(nextHistory));
 
     setScore(correct);
     setShowResult(true);
@@ -345,6 +467,61 @@ const QuizGeneratorPage = () => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const reportAnswers = selectedReport?.selectedAnswers || {};
+  const reportQuestions = Array.isArray(selectedReport?.questions)
+    ? selectedReport.questions
+    : [];
+  const reportTotal = Number(selectedReport?.total ?? selectedReport?.totalQuestions) || 0;
+  const reportScore = Number(selectedReport?.score) || 0;
+
+  const deleteSelectedReport = async () => {
+    if (!selectedReport || isDeletingReport) return;
+    setIsDeletingReport(true);
+
+    const resultId = selectedReport.resultId || selectedReport.id;
+    const selectedDate = new Date(
+      selectedReport.date || selectedReport.completedAt || selectedReport.createdAt,
+    ).getTime();
+    const isSameLocalResult = (item) => {
+      if (resultId && item.resultId) return item.resultId === resultId;
+      const itemDate = new Date(item.date || item.completedAt || item.createdAt).getTime();
+      return (
+        Number(item.score) === reportScore &&
+        Number(item.total ?? item.totalQuestions) === reportTotal &&
+        Number.isFinite(selectedDate) &&
+        Math.abs(selectedDate - itemDate) <= 5000
+      );
+    };
+
+    try {
+      if (resultId && userId !== "guest") {
+        await api.delete(`/quiz/result/${encodeURIComponent(resultId)}`);
+      }
+
+      const remainingLocalHistory = localQuizHistory.filter(
+        (item) => !isSameLocalResult(item),
+      );
+      setLocalQuizHistory(remainingLocalHistory);
+      localStorage.setItem(QUIZ_HISTORY_KEY, JSON.stringify(remainingLocalHistory));
+      if (resultId) {
+        setServerQuizHistory((history) =>
+          history.filter((item) => item.id !== resultId),
+        );
+      }
+
+      setSelectedReport(null);
+      setShowHistory(true);
+      toast.success("Quiz result deleted.");
+      return true;
+    } catch (error) {
+      console.error("Unable to delete quiz result:", error);
+      toast.error(error.response?.data?.message || "Could not delete this quiz result. Please try again.");
+      return false;
+    } finally {
+      setIsDeletingReport(false);
+    }
   };
 
   return (
@@ -386,12 +563,14 @@ const QuizGeneratorPage = () => {
               ) : (
                 <div className="d-flex flex-column gap-3">
                   {quizHistory.map((q, i) => {
-                    const isSuccess = q.score >= q.total * 0.6;
+                    const total = Number(q.total ?? q.totalQuestions) || 0;
+                    const subject = q.subject || q.courseTitle || "Quiz";
+                    const date = q.date || q.completedAt || q.createdAt;
+                    const isSuccess = total > 0 && q.score >= total * 0.6;
                     const performanceColor = isSuccess ? '#10b981' : '#ef4444';
-                    const performanceBg = isSuccess ? '#dcfce7' : '#fee2e2';
 
                     return (
-                      <div key={i} className="animate-fade-in" style={{ 
+                      <div key={q.resultId || q.id || `${date}-${i}`} className="animate-fade-in" style={{
                         background: 'white', 
                         borderRadius: '20px', 
                         padding: '1.25rem 1.5rem', 
@@ -415,7 +594,16 @@ const QuizGeneratorPage = () => {
                         e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0,0,0,0.02), 0 2px 4px -1px rgba(0,0,0,0.01)';
                         e.currentTarget.style.borderColor = 'rgba(0,0,0,0.04)';
                       }}
-                      onClick={() => { setShowHistory(false); setSelectedReport(q); }}
+                      onClick={() => {
+                        setShowHistory(false);
+                        setSelectedReport({
+                          ...q,
+                          total,
+                          subject,
+                          questions: Array.isArray(q.questions) ? q.questions : [],
+                          selectedAnswers: q.selectedAnswers || {},
+                        });
+                      }}
                     >
                       {/* Left accent bar */}
                       <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: performanceColor }}></div>
@@ -423,14 +611,14 @@ const QuizGeneratorPage = () => {
                       <div style={{ flex: 1, paddingLeft: '0.5rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
                           <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8' }}>
-                            <i className="bi bi-calendar3 me-1"></i> {new Date(q.date).toLocaleDateString()}
+                            <i className="bi bi-calendar3 me-1"></i> {date && !Number.isNaN(new Date(date).getTime()) ? new Date(date).toLocaleDateString() : "Date unavailable"}
                           </span>
                         </div>
                         
-                        <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#1e293b', letterSpacing: '-0.3px' }}>{q.subject}</h4>
+                        <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#1e293b', letterSpacing: '-0.3px' }}>{subject}</h4>
                         <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '15px' }}>
                           <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>
-                             <i className="bi bi-clock me-1"></i> {new Date(q.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                             <i className="bi bi-clock me-1"></i> {date && !Number.isNaN(new Date(date).getTime()) ? new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ""}
                           </span>
                           <button 
                             className="btn py-1 px-3" 
@@ -458,7 +646,7 @@ const QuizGeneratorPage = () => {
                       }}>
                         <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '2px' }}>Score</div>
                         <div style={{ fontSize: '1.35rem', fontWeight: 900, color: performanceColor }}>
-                          {q.score}<span style={{ fontSize: '0.9rem', color: '#cbd5e1', marginLeft: '2px' }}>/{q.total}</span>
+                          {q.score}<span style={{ fontSize: '0.9rem', color: '#cbd5e1', marginLeft: '2px' }}>/{total}</span>
                         </div>
                       </div>
                     </div>
@@ -474,23 +662,48 @@ const QuizGeneratorPage = () => {
 
       {selectedReport && (
         <div className="modal-overlay" onClick={() => setSelectedReport(null)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1060, padding: '1rem', animation: 'fadeIn 200ms ease-out' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--bg-primary, white)', borderRadius: '20px', boxShadow: '0 25px 50px rgba(0,0,0,0.15)', border: '1px solid rgba(0,0,0,0.08)', maxWidth: '850px', width: '100%', maxHeight: '82vh', display: 'flex', flexDirection: 'column', animation: 'slideUp 300ms cubic-bezier(0.4, 0, 0.2, 1)' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--bg-primary, white)', borderRadius: '20px', boxShadow: '0 25px 50px rgba(0,0,0,0.15)', border: '1px solid rgba(0,0,0,0.08)', maxWidth: '850px', width: '100%', height: 'min(82vh, 680px)', maxHeight: '82vh', display: 'flex', flexDirection: 'column', animation: 'slideUp 300ms cubic-bezier(0.4, 0, 0.2, 1)' }}>
             
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem 2rem', borderBottom: '1px solid rgba(0,0,0,0.05)', background: 'linear-gradient(135deg, rgba(121, 85, 72, 0.05) 0%, rgba(121, 85, 72, 0.02) 100%)', borderTopLeftRadius: '20px', borderTopRightRadius: '20px' }}>
               <div>
                 <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                   Results Analysis
                 </h2>
-                <div style={{ margin: '4px 0 0 2.15rem', color: '#64748b', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.02rem' }}>
-                  {selectedReport.subject} • {selectedReport.score}/{selectedReport.total} Correct ({Math.round((selectedReport.score / selectedReport.total) * 100)}%)
+                <div style={{ margin: '4px 0 0', color: '#64748b', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.02rem' }}>
+                  {selectedReport.subject || selectedReport.courseTitle || "Quiz"} • {reportScore}/{reportTotal} Correct ({reportTotal ? Math.round((reportScore / reportTotal) * 100) : 0}%)
                 </div>
               </div>
-              <button 
-                onClick={() => setSelectedReport(null)} 
-                style={{ width: '32px', height: '32px', border: 'none', background: 'rgba(0,0,0,0.05)', borderRadius: '50%', color: '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              >
-                <i className="bi bi-x"></i>
-              </button>
+              <div className="d-flex align-items-center gap-2">
+                <button
+                  type="button"
+                  aria-label="Delete quiz result"
+                  title="Delete quiz result"
+                  onClick={() => setShowDeleteConfirmation(true)}
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 0,
+                    border: "1px solid rgba(220, 38, 38, 0.2)",
+                    borderRadius: "50%",
+                    background: "rgba(220, 38, 38, 0.08)",
+                    color: "#dc2626",
+                    cursor: "pointer",
+                  }}
+                >
+                  <i className="bi bi-trash3"></i>
+                </button>
+                <button
+                  type="button"
+                  aria-label="Close report"
+                  onClick={() => setSelectedReport(null)}
+                  style={{ width: '32px', height: '32px', border: 'none', background: 'rgba(0,0,0,0.05)', borderRadius: '50%', color: '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <i className="bi bi-x"></i>
+                </button>
+              </div>
             </div>
 
             {/* Score summary bar */}
@@ -498,25 +711,25 @@ const QuizGeneratorPage = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#22c55e' }}></div>
                 <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  Correct: {selectedReport.score}
+                  Correct: {reportScore}
                 </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ef4444' }}></div>
                 <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  Wrong: {Object.keys(selectedReport.selectedAnswers).length - selectedReport.score}
+                  Wrong: {Math.max(0, Object.keys(reportAnswers).length - reportScore)}
                 </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#94a3b8' }}></div>
                 <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  Unanswered: {selectedReport.total - Object.keys(selectedReport.selectedAnswers).length}
+                  Unanswered: {Math.max(0, reportTotal - Object.keys(reportAnswers).length)}
                 </span>
               </div>
               {/* Progress bar */}
               <div style={{ flex: 1, minWidth: '120px', display: 'flex', alignItems: 'center' }}>
                 <div style={{ width: '100%', height: '8px', background: 'rgba(0,0,0,0.06)', borderRadius: '4px', overflow: 'hidden' }}>
-                  <div style={{ width: `${(selectedReport.score / selectedReport.total) * 100}%`, height: '100%', background: 'linear-gradient(90deg, #22c55e, #16a34a)', borderRadius: '4px', transition: 'width 0.5s ease' }}></div>
+                  <div style={{ width: `${reportTotal ? (reportScore / reportTotal) * 100 : 0}%`, height: '100%', background: 'linear-gradient(90deg, #22c55e, #16a34a)', borderRadius: '4px', transition: 'width 0.5s ease' }}></div>
                 </div>
               </div>
             </div>
@@ -524,8 +737,12 @@ const QuizGeneratorPage = () => {
             {/* Body — scrollable with custom scrollbar */}
             <div style={{ padding: '2rem', overflowY: 'auto', flex: 1 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                {selectedReport.questions.map((q, idx) => {
-                  const userAnswer = selectedReport.selectedAnswers[idx];
+                {reportQuestions.length === 0 ? (
+                  <p className="text-center text-muted mb-0">
+                    Detailed answers are unavailable for this older quiz result.
+                  </p>
+                ) : reportQuestions.map((q, idx) => {
+                  const userAnswer = reportAnswers[idx];
                   const isCorrect = userAnswer === q.answer;
                   const isUnanswered = !userAnswer;
 
@@ -559,7 +776,7 @@ const QuizGeneratorPage = () => {
                             {idx + 1}
                           </span>
                           <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.85rem' }}>
-                            Question {idx + 1} of {selectedReport.total}
+                            Question {idx + 1} of {reportTotal}
                           </span>
                         </div>
                         <span style={{
@@ -996,7 +1213,7 @@ const QuizGeneratorPage = () => {
               <button 
                 className="btn py-2 px-4 shadow-sm fw-bold d-flex align-items-center" 
                 style={{ background: 'var(--success)', color: 'white', border: 'none', borderRadius: '12px' }}
-                onClick={() => setSelectedReport({ questions, selectedAnswers, score, total: questions.length, subject: selectedSubjects.map(idx => filteredSyllabus[idx]?.courseTitle).join(', ') || 'Mixed Subjects' })}
+                onClick={() => setSelectedReport({ questions, selectedAnswers, score, total: questions.length, subject: quizSubjectTitle || 'Mixed Subjects', resultId: lastQuizResultId, date: localQuizHistory[0]?.date })}
               >
                 <i className="bi bi-file-earmark-text me-2"></i> View Detailed Report
               </button>
@@ -1129,6 +1346,15 @@ const QuizGeneratorPage = () => {
           </div>
         </>
       )}
+      <ConfirmationModal
+        show={showDeleteConfirmation}
+        onClose={() => setShowDeleteConfirmation(false)}
+        onConfirm={deleteSelectedReport}
+        title="Delete quiz result?"
+        message="This will permanently delete this quiz result from your history and database. This action cannot be undone."
+        confirmText={isDeletingReport ? "Deleting..." : "Delete quiz"}
+        type="danger"
+      />
     </div>
   );
 };

@@ -54,7 +54,7 @@ const Layout = () => {
       {isSettingsPage && <SettingsSubSidebar />}
       {isChatbotPage && <ChatSubSidebar />}
       <main
-        className={`page-content ${(isPlannerPage || isSettingsPage || isChatbotPage) ? "planner-page-active" : ""}`}
+        className={`page-content ${(isPlannerPage || isSettingsPage || isChatbotPage) ? "planner-page-active" : ""} ${isChatbotPage ? "chatbot-page-active" : ""}`}
       >
         <Outlet />
       </main>

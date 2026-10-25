@@ -7,7 +7,6 @@ const ChatbotPage = () => {
   const { 
     messages, 
     isTyping, 
-    aiStatus, 
     aiModels, 
     sendMessage, 
     cancelChat,
@@ -67,57 +66,24 @@ const ChatbotPage = () => {
     <div
       className="page-container"
       style={{
-        height: "calc(100vh - 100px)",
+        height: "100%",
+        minHeight: 0,
+        flex: "1 1 0",
         display: "flex",
         flexDirection: "column",
+        overflow: "hidden",
       }}
     >
       {/* Header */}
       <div className="page-header">
         <div className="d-flex align-items-center justify-content-between">
-          <div className="d-flex align-items-center gap-3">
-            <div
-              className="d-flex align-items-center justify-content-center rounded-circle"
-              style={{
-                width: "50px",
-                height: "50px",
-                background: "var(--gradient-primary)",
-                boxShadow: "0 0 20px rgba(121, 85, 72, 0.4)",
-                position: "relative",
-              }}
-            >
-              <i
-                className="bi bi-robot text-white"
-                style={{ fontSize: "1.5rem" }}
-              ></i>
-              <span
-                style={{
-                  position: "absolute",
-                  bottom: "2px",
-                  right: "2px",
-                  width: "12px",
-                  height: "12px",
-                  borderRadius: "50%",
-                  border: "2px solid white",
-                  background:
-                    aiStatus === "connected"
-                      ? "#22c55e"
-                      : aiStatus === "disconnected"
-                        ? "#ef4444"
-                        : "#f59e0b",
-                  animation:
-                    aiStatus === "connected"
-                      ? "pulse 2s infinite"
-                      : "none",
-                }}
-              />
-            </div>
+          <div className="d-flex align-items-center">
             <div>
               <h1 className="page-title" style={{ marginBottom: 0 }}>
                 Gyaani - AI Assistant
               </h1>
               <p className="page-subtitle" style={{ marginBottom: 0 }}>
-                Powered by Qwen (LM Studio)
+                Your personal study companion
               </p>
             </div>
           </div>
@@ -131,6 +97,7 @@ const ChatbotPage = () => {
           overflow: "hidden",
           display: "flex",
           flexDirection: "column",
+          minHeight: 0,
         }}
       >
         {/* Messages */}
@@ -138,6 +105,7 @@ const ChatbotPage = () => {
           className="flex-grow-1 p-3"
           style={{
             overflowY: "auto",
+            minHeight: 0,
             background:
               "linear-gradient(180deg, var(--bg-primary) 0%, var(--bg-secondary) 100%)",
           }}
